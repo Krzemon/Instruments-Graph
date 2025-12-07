@@ -1,0 +1,38 @@
+# Pliki i katalogi dla Pythona
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.venv/
+
+# Pliki i katalogi dla C++
+**/*.o
+**/*.obj
+**/*.exe
+**/*.so
+
+# Pliki ogólne dla różnych IDE
+**/.vscode/
+**/.idea/
+
+# Pliki binarne
+**/*.png
+**/*.jpg
+**/*.pdf
+**/*.gif
+
+# Pliki systemowe
+**/.DS_Store
+**/Thumbs.db
+
+# Inne
+**/build/
+**/data/
+**/plots/
+
+**/zalozenia.txt
+**/polecenie.txt
+**/plant_uml.txt
+**/cypher_neo4j.txt
+**/links.txt
+
+
