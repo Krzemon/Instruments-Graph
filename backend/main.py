@@ -1,17 +1,30 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from datetime import datetime, timedelta
+import yfinance as yf
 from neo4j_driver import run_query
 
-app = FastAPI(title="Portfolio API")
+scheduler = BackgroundScheduler()
 
-# CORS do testów z frontendem
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    update_all_prices()  # aktualizacja przy starcie
+    # TEST cyklicznego pobierania danych - co minutę
+    # scheduler.add_job(
+    #     update_all_prices,
+    #     trigger=CronTrigger(second=0, timezone="Europe/Warsaw")
+    # )
+    scheduler.add_job(
+        update_all_prices,
+        trigger=CronTrigger(hour=17, minute=30, timezone="Europe/Warsaw")
+    )
+    scheduler.start()
+    yield
+    scheduler.shutdown()
 
 # =============================
 # MODELE DANYCH
@@ -27,8 +40,62 @@ class PortfolioItemModel(BaseModel):
     amount: float  # ile jednostek użytkownik posiada
 
 # =============================
-# ENDPOINTY OGÓLNE - aktywa
+# CENY - Aktualizowanie
 # =============================
+def fetch_price(ticker: str) -> float | None:
+    """Pobiera ostatnią cenę zamknięcia z Yahoo Finance.
+    Jeśli brak nowych danych, zwraca None."""
+    try:
+        yf_ticker = yf.Ticker(ticker)
+        data = yf_ticker.history(period="5d")  # pobieramy kilka ostatnich dni
+        if data.empty:
+            return None
+        # bierzemy ostatni dostępny dzień
+        last_close = float(data["Close"].iloc[-1])
+        return last_close
+    except Exception as e:
+        print(f"⚠ Błąd pobierania ceny dla {ticker}: {e}")
+        return None
+
+def update_all_prices():
+    print(f"⏳ Aktualizuję ceny... ({datetime.now()})")
+
+    assets = run_query("""
+        MATCH (a:Asset)-[:HAS_PRICE]->(p:Price)
+        RETURN a.id AS id, a.ticker AS ticker, p.last_price AS last_price
+    """)
+
+    for record in assets:
+        asset_id = record["id"]
+        ticker = record.get("ticker")
+        last_price = record.get("last_price", 0.0)
+
+        new_price = fetch_price(ticker) if ticker else None
+
+        if new_price is not None:
+            run_query("""
+                MATCH (a:Asset {id: $id})-[:HAS_PRICE]->(p:Price)
+                SET p.last_price = $price,
+                    p.last_price_ts = timestamp()
+            """, {"id": asset_id, "price": new_price})
+            print(f"✔ {asset_id} → {new_price}")
+        else:
+            # brak nowych danych, zostawiamy poprzednią cenę
+            print(f"⚠ {asset_id} brak nowych danych, zostawiamy {last_price}")
+
+# =============================
+# POŁĄCZENIE
+# =============================
+
+app = FastAPI(title="Portfolio API", lifespan=lifespan)
+
+# CORS do testów z frontendem
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 @app.get("/")
 def status_check():
@@ -38,33 +105,88 @@ def status_check():
         return {"status": "ok", "neo4j_connection": True}
     except:
         return {"status": "error", "neo4j_connection": False}
+# =============================
+# ENDPOINTY - aktywa
+# =============================
+
+# @app.get("/assets")
+# def get_assets():
+#     """Pobranie wszystkich aktywów z bazy"""
+#     query = "MATCH (a:Asset) RETURN a.id AS id, a.name AS name, a.type AS type, a.value AS value"
+#     return run_query(query)
+
+# @app.post("/assets")
+# def add_asset(asset: AssetModel):
+#     """Dodanie nowego aktywa do bazy"""
+#     query = f"""
+#     MERGE (a:Asset {{id: '{asset.id}'}})
+#     SET a.name = '{asset.name}', a.type = '{asset.type}', a.value = {asset.value}
+#     """
+#     run_query(query)
+#     return {"message": f"Aktywo {asset.name} dodane/zmodyfikowane w bazie"}
+
+# @app.put("/assets/{asset_id}/price")
+# def update_asset_price(asset_id: str, price: float):
+#     """Aktualizacja ceny aktywa"""
+#     query = f"""
+#     MATCH (a:Asset {{id: '{asset_id}'}})
+#     MERGE (p:Price)  // jeśli chcesz mieć osobny node Price, lub można trzymać w Asset.value
+#     SET a.value = {price}
+#     """
+#     run_query(query)
+#     return {"message": f"Cena aktywa {asset_id} zaktualizowana na {price}"}
+
 
 @app.get("/assets")
 def get_assets():
-    """Pobranie wszystkich aktywów z bazy"""
-    query = "MATCH (a:Asset) RETURN a.id AS id, a.name AS name, a.type AS type, a.value AS value"
+    """Pobranie wszystkich aktywów z ceną, typem i grupą"""
+    query = """
+    MATCH (a:Asset)-[:HAS_PRICE]->(p:Price)
+    OPTIONAL MATCH (a)-[:BELONGS_TO]->(c:AssetClass)-[:SUBCLASS_OF]->(g:AssetGroup)
+    RETURN a.id AS id,
+           a.name AS name,
+           c.name AS type,
+           g.name AS group,
+           p.last_price AS value,
+           p.last_price_ts AS price_ts
+    ORDER BY a.id
+    """
     return run_query(query)
 
-@app.post("/assets")
-def add_asset(asset: AssetModel):
-    """Dodanie nowego aktywa do bazy"""
-    query = f"""
-    MERGE (a:Asset {{id: '{asset.id}'}})
-    SET a.name = '{asset.name}', a.type = '{asset.type}', a.value = {asset.value}
-    """
-    run_query(query)
-    return {"message": f"Aktywo {asset.name} dodane/zmodyfikowane w bazie"}
-
 @app.put("/assets/{asset_id}/price")
-def update_asset_price(asset_id: str, price: float):
-    """Aktualizacja ceny aktywa"""
-    query = f"""
-    MATCH (a:Asset {{id: '{asset_id}'}})
-    MERGE (p:Price)  // jeśli chcesz mieć osobny node Price, lub można trzymać w Asset.value
-    SET a.value = {price}
+def update_asset_price(asset_id: str):
+    """Ręczna aktualizacja ceny pojedynczego aktywa"""
+    result = run_query("""
+        MATCH (a:Asset {id:$id})-[:HAS_PRICE]->(p:Price)
+        RETURN a.id AS id, a.ticker AS ticker
+    """, {"id": asset_id})
+
+    if not result:
+        return {"error": f"Nie znaleziono aktywa {asset_id}"}
+
+    ticker = result[0].get("ticker")
+    price = fetch_price(ticker) if ticker else 0.0
+
+    run_query("""
+        MATCH (a:Asset {id: $id})-[:HAS_PRICE]->(p:Price)
+        SET p.last_price = $price,
+            p.last_price_ts = timestamp()
+    """, {"id": asset_id, "price": price})
+
+    return {"asset": asset_id, "price": price}
+
+@app.post("/assets")
+def add_asset(asset: dict):
+    """Dodanie lub aktualizacja nowego aktywa"""
+    query = """
+    MERGE (a:Asset {id:$id})
+    SET a.name=$name, a.ticker=$ticker
+    MERGE (a)-[:HAS_PRICE]->(p:Price)
+    ON CREATE SET p.last_price=0.0, p.last_price_ts=timestamp()
     """
-    run_query(query)
-    return {"message": f"Cena aktywa {asset_id} zaktualizowana na {price}"}
+    run_query(query, {"id": asset["id"], "name": asset["name"], "ticker": asset.get("ticker")})
+    return {"message": f"Aktywo {asset['name']} dodane/zmodyfikowane"}
+
 
 # =============================
 # ENDPOINTY PORTFELU

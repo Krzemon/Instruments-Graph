@@ -183,11 +183,27 @@ async function loadAssets() {
     const ul = document.createElement('ul');
     data.forEach(a => {
         const li = document.createElement('li');
-        li.innerText = `${a.id} - ${a.name} | Typ: ${a.type || '-'} | Cena: ${a.value ?? '-'}`;
+        li.innerText = `${a.id} - ${a.name} | Typ: ${a.type || '-'} | Grupa: ${a.group || '-'} | Cena: ${a.value ?? '-'}`;
         ul.appendChild(li);
     });
     container.appendChild(ul);
 }
+
+
+// stare
+// async function loadAssets() {
+//     const data = await fetchAssets();
+//     const container = document.getElementById('assets-list');
+//     container.innerHTML = '<h3>Lista aktywów:</h3>';
+
+//     const ul = document.createElement('ul');
+//     data.forEach(a => {
+//         const li = document.createElement('li');
+//         li.innerText = `${a.id} - ${a.name} | Typ: ${a.type || '-'} | Cena: ${a.value ?? '-'}`;
+//         ul.appendChild(li);
+//     });
+//     container.appendChild(ul);
+// }
 
 // =============================
 // Zakładka Rekomendacje
