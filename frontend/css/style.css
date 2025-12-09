@@ -1,0 +1,312 @@
+/* Globalne */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* zapobiega scrollowi całej strony */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f4f6f8;
+    color: #333;
+}
+
+/* ============================= */
+/* Nawigacja / pasek zakładek z wartością portfela */
+nav {
+    display: flex;
+    justify-content: space-between; /* zakładki po lewej, wartość portfela po prawej */
+    align-items: center;
+    background: #2c3e50;
+    padding: 0 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    height: 50px; /* wysokość paska */
+    box-sizing: border-box;
+}
+
+nav ul {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+nav ul li {
+    padding: 14px 25px;
+    cursor: pointer;
+    color: #ecf0f1;
+    transition: background 0.3s, color 0.3s;
+    user-select: none;
+    white-space: nowrap;
+}
+
+nav ul li:hover {
+    background: #34495e;
+}
+
+nav ul li.active {
+    background: #e74c3c;
+    color: white;
+    font-weight: bold;
+}
+
+/* Wartość portfela po prawej stronie */
+#portfolio-value {
+    font-size: 16px;
+    font-weight: bold;
+    color: #ecf0f1;
+    white-space: nowrap; /* liczba nie zawija się */
+}
+
+#portfolio-value #portfolio-amount {
+    color: #f1c40f; /* wyróżnienie liczby złotym kolorem */
+}
+
+/* ============================= */
+/* Zakładki / sekcje */
+.tab {
+    display: none;
+    padding: 20px;
+    height: calc(100vh - 50px); /* dopasowanie wysokości sekcji do paska zakładek */
+    box-sizing: border-box;
+    overflow: hidden; /* scroll tylko w lewej kolumnie */
+}
+
+.tab.active {
+    display: block;
+}
+
+/* ============================= */
+/* Dashboard */
+#backend-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    margin-top: 10px;
+}
+
+/* ============================= */
+/* Portfel – układ */
+#portfolio-container {
+    display: flex;
+    gap: 20px;
+    flex-wrap: nowrap;
+
+    height: calc(100vh - 60px); /* odejmujemy wysokość nav i ewentualne marginesy */
+    align-items: stretch;        /* kolumny rozciągnięte na pełną wysokość */
+    padding: 10px;               /* estetyczne odstępy */
+    box-sizing: border-box;
+}
+
+/* ============================= */
+/* Lewa kolumna – tabela */
+#portfolio-table {
+    flex: 1;
+    min-width: 350px;
+    max-width: 600px;
+
+    /* chat gada glupoty */
+    height: 90%;          /* dopasowanie do kontenera */
+    overflow-y: auto;      /* suwak tylko dla tabeli */
+    overflow-x: auto;      /* suwak poziomy jeśli tabela za szeroka */
+}
+
+#portfolio-table table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#portfolio-table th, 
+#portfolio-table td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+/* Kolumny – pełna kontrola */
+.id-col { width: 8%; }
+.name-col { width: 50%; }
+.amount-col { width: 12%; }
+.price-col { width: 15%; }
+.actions-col { width: 15%; text-align: center; }
+
+.amount-col input {
+    width: 60px;
+    padding: 5px;
+    border-radius: 4px;
+    border: 1px solid #aaa;
+}
+
+/* Kolory tabeli */
+#portfolio-table th {
+    background: #3498db;
+    color: white;
+    font-weight: 600;
+}
+
+#portfolio-table tr:nth-child(even) {
+    background: #f7f9fb;
+}
+
+#portfolio-table tr:hover {
+    background: #eef3f8;
+}
+
+/* Przyciski w tabeli */
+#portfolio-table button {
+    padding: 6px 10px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#portfolio-table button:hover {
+    background: #2980b9;
+}
+
+.add-row {
+    text-align: center;
+    background: #fff;
+    padding: 15px;
+}
+
+/* ============================= */
+/* Prawa kolumna – graf */
+#portfolio-graph {
+    flex: 1;
+    min-width: 600px;
+
+    height: 90%;       /* pełna wysokość kontenera */
+    box-sizing: border-box;
+    padding: 15px;
+
+    border-radius: 10px;
+    border: 1px solid #ccc;
+    background: #fff;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+
+    overflow: hidden;   /* brak scrolla w panelu grafu */
+}
+
+/* Zapobiega przycinaniu samego obszaru SVG */
+#portfolio-graph svg {
+    overflow: visible !important;
+    background: transparent; /* SVG nie robi drugiego białego prostokąta */
+}
+
+/* ============================= */
+/* Etykiety węzłów */
+.node-label {
+    font-size: 14px;
+    fill: #fff;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+}
+
+/* Etykiety krawędzi */
+.edge-label {
+    font-size: 14px;
+    font-weight: 600;
+    fill: #333;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+}
+
+/* ============================= */
+/* Lista aktywów / rekomendacje */
+#assets-list, #recommend-list {
+    margin-top: 20px;
+}
+
+#assets-list ul, #recommend-list ul {
+    padding-left: 20px;
+}
+
+/* ============================= */
+/* Przyciski */
+button {
+    padding: 6px 10px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.3s;
+    margin: 2px;
+}
+
+button:hover {
+    background: #2980b9;
+}
+
+/* ============================= */
+/* Modal (dodawanie aktywów) */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 99999;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.55);
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background: white;
+    padding: 25px;
+    border-radius: 8px;
+    width: 400px;
+    animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+.modal-content h3 {
+    margin-top: 0;
+}
+
+.modal-content select,
+.modal-content input {
+    width: 100%;
+    padding: 8px;
+    margin-top: 8px;
+    margin-bottom: 12px;
+    border-radius: 4px;
+    border: 1px solid #aaa;
+}
+
+.modal-content button {
+    width: 100%;
+    padding: 10px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.modal-content button:hover {
+    background: #2980b9;
+}
+
+/* ============================= */
+/* Responsywność */
+@media (max-width: 900px) {
+    #portfolio-container {
+        flex-direction: column;
+    }
+
+    #portfolio-graph {
+        height: 400px;
+    }
+}
