@@ -27,3 +27,8 @@ export async function fetchDiversifiers() {
     const res = await fetch('http://localhost:8000/recommend/diversifiers');
     return await res.json();
 }
+
+export async function fetchCorrelations() {
+    const res = await fetch('http://localhost:8000/calculate-correlations');
+    return await res.json();
+}

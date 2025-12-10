@@ -1,0 +1,311 @@
+export async function drawPortfolioGraph(data) {
+    const container = document.getElementById('portfolio-graph');
+    const width = container.clientWidth || 900;
+    const height = container.clientHeight || 600;
+    const viewBoxBuffer = 400;
+
+    d3.select("#portfolio-graph").selectAll("*").remove();
+
+    const zoom = d3.zoom()
+        .scaleExtent([0.2, 3])
+        .on("zoom", (event) => { gMain.attr("transform", event.transform); });
+
+    const svg = d3.select("#portfolio-graph")
+        .append("svg")
+        .attr("width", "100%")
+        .attr("height", "100%")
+        .attr("viewBox", `${-viewBoxBuffer} ${-viewBoxBuffer} ${width + viewBoxBuffer*2} ${height + viewBoxBuffer*2}`)
+        .style("overflow", "visible")
+        .style("background", "transparent")
+        .call(zoom);
+
+    const gMain = svg.append("g");
+    svg.call(
+        zoom.transform,
+        d3.zoomIdentity
+            .translate(width / 2, height / 2)
+            .scale(1.7)
+            .translate(-width / 2, -height / 2)
+    );
+
+    const gLinks = gMain.append("g").attr("class", "links");
+    const gEdgeLabels = gMain.append("g").attr("class", "edge-labels");
+    const gNodes = gMain.append("g").attr("class", "nodes");
+    const gNodeLabels = gMain.append("g").attr("class", "node-labels");
+
+    // --- dane już mają strukturę { nodes, links } ---
+    const nodes = data.nodes; 
+    const links = data.links;
+
+    // zamiana ID na referencje węzłów
+    const nodeById = new Map(nodes.map(d => [d.id, d]));
+    links.forEach(l => {
+        l.source = nodeById.get(l.source);
+        l.target = nodeById.get(l.target);
+    });
+    
+//    function returnToClusterForceWithEdges(nodes, links, nodeRadius = 40, maxDist = 400, pullStrength = 2, returnRadius = 300) {
+//     function findClusters() {
+//         const visited = new Set();
+//         const clusters = [];
+
+//         nodes.forEach(n => {
+//             if (visited.has(n)) return;
+//             const cluster = [];
+//             const stack = [n];
+//             while(stack.length > 0) {
+//                 const curr = stack.pop();
+//                 if (visited.has(curr)) continue;
+//                 visited.add(curr);
+//                 cluster.push(curr);
+
+//                 links.forEach(l => {
+//                     if(l.source === curr && !visited.has(l.target)) stack.push(l.target);
+//                     if(l.target === curr && !visited.has(l.source)) stack.push(l.source);
+//                 });
+//             }
+//             clusters.push(cluster);
+//         });
+
+//         return clusters;
+//     }
+
+//     return function(alpha) {
+//         const clusters = findClusters();
+
+//         clusters.forEach(cluster => {
+//             const otherNodes = nodes.filter(n => !cluster.includes(n));
+//             if(otherNodes.length === 0) return;
+
+//             // centroid pozostałych węzłów
+//             const centerX = otherNodes.reduce((sum, o) => sum + o.x, 0) / otherNodes.length;
+//             const centerY = otherNodes.reduce((sum, o) => sum + o.y, 0) / otherNodes.length;
+
+//             // centroid zespołu
+//             const clusterCenterX = cluster.reduce((sum, n) => sum + n.x, 0) / cluster.length;
+//             const clusterCenterY = cluster.reduce((sum, n) => sum + n.y, 0) / cluster.length;
+
+//             // odległość centroidu od pozostałych
+//             const dxCenter = centerX - clusterCenterX;
+//             const dyCenter = centerY - clusterCenterY;
+//             const distCenter = Math.sqrt(dxCenter*dxCenter + dyCenter*dyCenter);
+
+//             cluster.forEach(n => {
+//                 // --- siła powrotu tylko jeśli centroid zespołu jest poza returnRadius ---
+//                 if(distCenter > returnRadius) {
+//                     const force = pullStrength * ((distCenter - returnRadius)/returnRadius);
+//                     n.vx += (dxCenter / distCenter) * force;
+//                     n.vy += (dyCenter / distCenter) * force;
+//                 } else {
+//                     // w obrębie returnRadius: włącz normalne odpychanie w zespole
+//                     const minDist = 2 * nodeRadius;
+//                     cluster.forEach(other => {
+//                         if(other === n) return;
+//                         const dx = other.x - n.x;
+//                         const dy = other.y - n.y;
+//                         const dist = Math.sqrt(dx*dx + dy*dy);
+//                         if(dist > 0 && dist < minDist) {
+//                             const repulse = (minDist - dist) / minDist * pullStrength;
+//                             n.vx -= (dx / dist) * repulse;
+//                             n.vy -= (dy / dist) * repulse;
+//                         }
+//                     });
+
+//                     // odpychanie od pozostałych węzłów poza zespołem
+//                     const minDistOuter = 2 * nodeRadius;
+//                     otherNodes.forEach(o => {
+//                         const dx = o.x - n.x;
+//                         const dy = o.y - n.y;
+//                         const dist = Math.sqrt(dx*dx + dy*dy);
+//                         if(dist > 0 && dist < minDistOuter) {
+//                             const repulse = (minDistOuter - dist)/minDistOuter * pullStrength;
+//                             n.vx -= (dx / dist) * repulse;
+//                             n.vy -= (dy / dist) * repulse;
+//                         }
+//                     });
+//                 }
+//             });
+//         });
+//     };
+// }
+
+
+function returnToClusterForceWithEdges(nodes, links, nodeRadius = 40, maxDist = 400, pullStrength = 2, returnRadius = 300) {
+    function findClusters() {
+        const visited = new Set();
+        const clusters = [];
+
+        nodes.forEach(n => {
+            if (visited.has(n)) return;
+            const cluster = [];
+            const stack = [n];
+            while(stack.length > 0) {
+                const curr = stack.pop();
+                if (visited.has(curr)) continue;
+                visited.add(curr);
+                cluster.push(curr);
+
+                links.forEach(l => {
+                    if(l.source === curr && !visited.has(l.target)) stack.push(l.target);
+                    if(l.target === curr && !visited.has(l.source)) stack.push(l.source);
+                });
+            }
+            clusters.push(cluster);
+        });
+
+        return clusters;
+    }
+
+    return function(alpha) {
+        const clusters = findClusters();
+        const minDist = 3 * nodeRadius;
+
+        // --- krok 1: siła powrotu centroidów i odpychanie w obrębie klastrów ---
+        clusters.forEach(cluster => {
+            const otherNodes = nodes.filter(n => !cluster.includes(n));
+            if(otherNodes.length === 0) return;
+
+            const centerX = otherNodes.reduce((sum, o) => sum + o.x, 0) / otherNodes.length;
+            const centerY = otherNodes.reduce((sum, o) => sum + o.y, 0) / otherNodes.length;
+
+            const clusterCenterX = cluster.reduce((sum, n) => sum + n.x, 0) / cluster.length;
+            const clusterCenterY = cluster.reduce((sum, n) => sum + n.y, 0) / cluster.length;
+
+            const dxCenter = centerX - clusterCenterX;
+            const dyCenter = centerY - clusterCenterY;
+            const distCenter = Math.sqrt(dxCenter*dxCenter + dyCenter*dyCenter);
+
+            cluster.forEach(n => {
+                if(distCenter > returnRadius) {
+                    const force = pullStrength * ((distCenter - returnRadius)/returnRadius);
+                    n.vx += (dxCenter / distCenter) * force;
+                    n.vy += (dyCenter / distCenter) * force;
+                } else {
+                    // odpychanie w obrębie klastra
+                    cluster.forEach(other => {
+                        if(other === n) return;
+                        const dx = other.x - n.x;
+                        const dy = other.y - n.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        if(dist > 0 && dist < minDist) {
+                            const repulse = (minDist - dist)/minDist * pullStrength;
+                            n.vx -= (dx / dist) * repulse;
+                            n.vy -= (dy / dist) * repulse;
+                        }
+                    });
+
+                    // odpychanie od węzłów z innych klastrów
+                    otherNodes.forEach(o => {
+                        const dx = o.x - n.x;
+                        const dy = o.y - n.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        if(dist > 0 && dist < minDist) {
+                            const repulse = (minDist - dist)/minDist * pullStrength;
+                            n.vx -= (dx / dist) * repulse;
+                            n.vy -= (dy / dist) * repulse;
+                        }
+                    });
+                }
+            });
+        });
+
+        // --- krok 2: finalne odpychanie wszystkich węzłów ---
+        for(let i = 0; i < nodes.length; i++) {
+            for(let j = i + 1; j < nodes.length; j++) {
+                const a = nodes[i];
+                const b = nodes[j];
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if(dist > 0 && dist < minDist) {
+                    const repulse = (minDist - dist)/minDist * pullStrength;
+                    const fx = (dx / dist) * repulse;
+                    const fy = (dy / dist) * repulse;
+                    a.vx -= fx;
+                    a.vy -= fy;
+                    b.vx += fx;
+                    b.vy += fy;
+                }
+            }
+        }
+    };
+}
+
+
+// --- użycie ---
+const simulation = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links)
+        .id(d => d.id)
+        .distance(420)
+        .strength(0.3))
+    .force("charge", d3.forceManyBody().strength(-1000))
+    .force("center", d3.forceCenter(width/2, height/2))
+    .force("clusterReturn", returnToClusterForceWithEdges(nodes, links, 40, 400, 2))
+    .alphaTarget(0.1)
+    .velocityDecay(0.3);
+
+
+
+    const link = gLinks.selectAll("line")
+        .data(links)
+        .enter()
+        .append("line")
+        .attr("stroke-width", d => Math.max(1, Math.abs(d.value) * 4))
+        .attr("stroke", d => d.value > 0 ? "#e74c3c" : "#27ae60")
+        .attr("stroke-opacity", 0.9);
+
+    const edgeLabel = gEdgeLabels.selectAll("text")
+        .data(links)
+        .enter()
+        .append("text")
+        .attr("class", "edge-label")
+        .text(d => d.value.toFixed(2));
+
+    const node = gNodes.selectAll("circle")
+        .data(nodes)
+        .enter()
+        .append("circle")
+        .attr("r", 40)
+        .attr("fill", "#3498db")
+        .attr("stroke", "#166fa6")
+        .attr("stroke-width", 2)
+        .style("cursor", "pointer")
+        .call(d3.drag()
+            .on("start", dragstarted)
+            .on("drag", dragged)
+            .on("end", dragended)
+        );
+
+    const nodeLabel = gNodeLabels.selectAll("text")
+        .data(nodes)
+        .enter()
+        .append("text")
+        .attr("class", "node-label")
+        .text(d => d.id)
+        .style("pointer-events", "none");
+
+    simulation.on("tick", () => {
+        link
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
+
+        edgeLabel
+            .attr("x", d => (d.source.x + d.target.x) / 2 + 10)
+            .attr("y", d => (d.source.y + d.target.y) / 2 + 10);
+
+        node
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y);
+
+        nodeLabel
+            .attr("x", d => d.x)
+            .attr("y", d => d.y);
+    });
+
+    function dragstarted(event, d) { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
+    function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+    // function dragended(event, d) { if (!event.active) simulation.alphaTarget(0); d.fx = d.x; d.fy = d.y; } // pozostaje w miejscu
+    function dragended(event, d) { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
+}

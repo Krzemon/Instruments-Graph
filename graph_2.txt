@@ -208,45 +208,13 @@ export async function drawPortfolioGraph(data) {
     }
 
     // --- zoom + pan ---
-let currentTransform = d3.zoomIdentity;
+    const zoom = d3.zoom()
+        .scaleExtent([0.5, 3])
+        .on("zoom", (event) => {
+            gMain.attr("transform", event.transform); // skaluje okrąg, węzły i krawędzie razem
+        });
 
-const zoom = d3.zoom()
-    .scaleExtent([0.5, 3])
-    .on("zoom", (event) => {
-        currentTransform = event.transform;
-        gMain.attr("transform", currentTransform);
-    })
-    .on("end", () => {
-        const r = baseRadius;
-        const marginFactor = 1.2;
-
-        // przekształcenie punktu środka widoku do układu grafu
-        const viewCenterGraphX = (width/2 - currentTransform.x) / currentTransform.k;
-        const viewCenterGraphY = (height/2 - currentTransform.y) / currentTransform.k;
-
-        // odległość środka widoku od środka okręgu
-        const dx = viewCenterGraphX - centerX;
-        const dy = viewCenterGraphY - centerY;
-        const distance = Math.sqrt(dx*dx + dy*dy);
-
-        // jeśli odległość większa niż 1.2 * promień → powrót
-        if(distance > r * marginFactor){
-            const targetX = width/2 - centerX * currentTransform.k;
-            const targetY = height/2 - centerY * currentTransform.k;
-
-            d3.transition().duration(500).tween("pan", () => {
-                const ix = d3.interpolate(currentTransform.x, targetX);
-                const iy = d3.interpolate(currentTransform.y, targetY);
-                return t => {
-                    currentTransform.x = ix(t);
-                    currentTransform.y = iy(t);
-                    gMain.attr("transform", currentTransform);
-                };
-            });
-        }
-    });
-
-svg.call(zoom);
+    svg.call(zoom);
 
     // --- klik w tło resetuje podświetlenie ---
     svg.on("click", () => {

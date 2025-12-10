@@ -6,6 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime, timedelta
 import yfinance as yf
+import pandas as pd
 from neo4j_driver import run_query
 
 scheduler = BackgroundScheduler()
@@ -105,53 +106,105 @@ def status_check():
         return {"status": "ok", "neo4j_connection": True}
     except:
         return {"status": "error", "neo4j_connection": False}
+    
+
+# =============================
+# Endpoint do jednorazowego liczenia korelacji
+# =============================
+@app.get("/calculate-correlations")
+async def calculate_correlations():
+    # Hardkodowane daty: od roku wstecz do wczoraj
+    end_date = datetime.now() - timedelta(days=1)
+    start_date = end_date - timedelta(days=365)
+
+    # Pobranie wszystkich aktywów z tickerami
+    assets = run_query("MATCH (a:Asset) RETURN a.id AS id, a.ticker AS ticker")
+    if not assets or len(assets) < 2:
+        raise HTTPException(status_code=400, detail="Za mało aktywów do obliczenia korelacji")
+
+    tickers = [a['ticker'] for a in assets]
+    ids = [a['id'] for a in assets]
+
+    # Pobranie cen OHLC dziennie
+    try:
+        data = yf.download(tickers, start=start_date.strftime("%Y-%m-%d"),
+                           end=end_date.strftime("%Y-%m-%d"), interval="1d")['Close']
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd pobierania danych: {e}")
+
+    if data.empty:
+        raise HTTPException(status_code=404, detail="Brak danych cenowych")
+
+    # Korelacja cen zamknięcia
+    corr_matrix = data.corr()
+
+    # Zapis korelacji do Neo4j
+    for i, id1 in enumerate(ids):
+        for j, id2 in enumerate(ids):
+            if j <= i:  # zapisujemy tylko raz
+                continue
+            corr_value = float(corr_matrix.iloc[i, j])
+            run_query("""
+                MATCH (a:Asset {id:$a_id}), (b:Asset {id:$b_id})
+                MERGE (a)-[r:CORRELATED]->(b)
+                SET r.value = $corr
+            """, {"a_id": id1, "b_id": id2, "corr": corr_value})
+
+    return {"status": "success", "message": "Korelacje policzone i zapisane w bazie"}
+
 # =============================
 # ENDPOINTY - aktywa
 # =============================
 
 # @app.get("/assets")
 # def get_assets():
-#     """Pobranie wszystkich aktywów z bazy"""
-#     query = "MATCH (a:Asset) RETURN a.id AS id, a.name AS name, a.type AS type, a.value AS value"
+#     query = """
+#     MATCH (a:Asset)-[:HAS_PRICE]->(p:Price)
+#     OPTIONAL MATCH (a)-[:BELONGS_TO]->(c:AssetClass)
+#     OPTIONAL MATCH (c)-[:SUBCLASS_OF]->(g:AssetGroup)
+#     RETURN a.id AS id,
+#            a.name AS name,
+#            c.name AS asset_class,
+#            g.name AS asset_group,
+#            round(p.last_price, 4) AS value,
+#            p.last_price_ts AS price_ts
+#     ORDER BY a.id
+#     """
 #     return run_query(query)
-
-# @app.post("/assets")
-# def add_asset(asset: AssetModel):
-#     """Dodanie nowego aktywa do bazy"""
-#     query = f"""
-#     MERGE (a:Asset {{id: '{asset.id}'}})
-#     SET a.name = '{asset.name}', a.type = '{asset.type}', a.value = {asset.value}
-#     """
-#     run_query(query)
-#     return {"message": f"Aktywo {asset.name} dodane/zmodyfikowane w bazie"}
-
-# @app.put("/assets/{asset_id}/price")
-# def update_asset_price(asset_id: str, price: float):
-#     """Aktualizacja ceny aktywa"""
-#     query = f"""
-#     MATCH (a:Asset {{id: '{asset_id}'}})
-#     MERGE (p:Price)  // jeśli chcesz mieć osobny node Price, lub można trzymać w Asset.value
-#     SET a.value = {price}
-#     """
-#     run_query(query)
-#     return {"message": f"Cena aktywa {asset_id} zaktualizowana na {price}"}
 
 
 @app.get("/assets")
 def get_assets():
-    """Pobranie wszystkich aktywów z ceną, typem i grupą"""
     query = """
     MATCH (a:Asset)-[:HAS_PRICE]->(p:Price)
-    OPTIONAL MATCH (a)-[:BELONGS_TO]->(c:AssetClass)-[:SUBCLASS_OF]->(g:AssetGroup)
+    OPTIONAL MATCH (a)-[:BELONGS_TO]->(c:AssetClass)
+    OPTIONAL MATCH (c)-[:SUBCLASS_OF]->(g:AssetGroup)
     RETURN a.id AS id,
            a.name AS name,
-           c.name AS type,
-           g.name AS group,
-           p.last_price AS value,
+           c.name AS asset_class,
+           g.name AS asset_group,
+           round(p.last_price, 4) AS value,
            p.last_price_ts AS price_ts
     ORDER BY a.id
     """
     return run_query(query)
+
+# @app.get("/assets")
+# def get_assets():
+#     query = """
+#     MATCH (a:Asset)-[:HAS_PRICE]->(p:Price)
+#     OPTIONAL MATCH (a)-[:BELONGS_TO]->(c:AssetClass)
+#     OPTIONAL MATCH (c)-[:SUBCLASS_OF]->(g:AssetGroup)
+#     RETURN a.id AS id,
+#            a.name AS name,
+#            head(collect(c.name)) AS asset_class,
+#            head(collect(g.name)) AS asset_group,
+#            round(p.last_price, 4) AS value,
+#            p.last_price_ts AS price_ts
+#     ORDER BY a.id
+#     """
+#     return run_query(query)
+
 
 @app.put("/assets/{asset_id}/price")
 def update_asset_price(asset_id: str):
@@ -191,21 +244,49 @@ def add_asset(asset: dict):
 # =============================
 # ENDPOINTY PORTFELU
 # =============================
+# @app.get("/portfolio")
+# def get_portfolio():
+#     """Pobranie portfela użytkownika z klasą i ceną"""
+#     query = """
+#     MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)-[:HAS_PRICE]->(price:Price)
+#     MATCH (a)-[:BELONGS_TO]->(cls:AssetClass)
+#     RETURN
+#         a.id AS asset_id,
+#         a.name AS name,
+#         cls.name AS asset_class,
+#         r.amount AS amount,
+#         round(price.last_price, 2) AS current_price
+#     ORDER BY a.id
+#     """
+#     return run_query(query)
+
 @app.get("/portfolio")
 def get_portfolio():
-    """Pobranie portfela użytkownika"""
+    """Pobranie portfela użytkownika z klasą i ceną"""
     query = """
-    MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)
-    RETURN a.id AS asset_id, a.name AS name, r.amount AS amount, a.value AS current_price
+    MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)-[:HAS_PRICE]->(price:Price)
+    OPTIONAL MATCH (a)-[:BELONGS_TO]->(cls:AssetClass)
+    RETURN
+        a.id AS asset_id,
+        a.name AS name,
+        head(collect(cls.name)) AS asset_class,
+        r.amount AS amount,
+        round(price.last_price, 2) AS current_price
+    ORDER BY a.id
     """
     return run_query(query)
+
 
 @app.get("/portfolio/graph")
 def get_portfolio_graph():
     """Zwraca węzły i krawędzie portfela dla grafu"""
     nodes_query = """
     MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)
-    RETURN a.id AS asset_id, a.name AS name, r.amount AS amount, a.value AS current_price
+    RETURN 
+        a.id AS asset_id, 
+        a.name AS name, 
+        r.amount AS amount, 
+        a.value AS current_price
     """
     nodes = run_query(nodes_query)
     asset_ids = [n["asset_id"] for n in nodes]
@@ -214,7 +295,10 @@ def get_portfolio_graph():
         links_query = f"""
         MATCH (a:Asset)-[r:CORRELATED]->(b:Asset)
         WHERE a.id IN {asset_ids} AND b.id IN {asset_ids}
-        RETURN a.id AS source, b.id AS target, r.value AS value
+        RETURN 
+            a.id AS source, 
+            b.id AS target, 
+            r.value AS value
         """
         links = run_query(links_query)
     else:
@@ -261,7 +345,10 @@ def get_top_correlated(asset_id: str, limit: int = 10):
     """Znajdź najbardziej skorelowane aktywa dla danego assetu"""
     query = f"""
     MATCH (a:Asset {{id:'{asset_id}'}})-[r:CORRELATED]->(other:Asset)
-    RETURN other.id AS id, other.name AS name, r.value AS correlation
+    RETURN 
+        other.id AS id, 
+        other.name AS name, 
+        r.value AS correlation
     ORDER BY abs(r.value) DESC
     LIMIT {limit}
     """
@@ -279,7 +366,10 @@ def get_diversifiers(limit: int = 10):
     MATCH (pa)-[r:CORRELATED]->(candidate)
     WHERE pa IN portAssets
     WITH candidate, avg(r.value) AS avgCorr
-    RETURN candidate.id AS id, candidate.name AS name, avgCorr
+    RETURN 
+        candidate.id AS id, 
+        candidate.name AS name, 
+        avgCorr
     ORDER BY avgCorr ASC
     LIMIT {limit}
     """
