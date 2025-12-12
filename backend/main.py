@@ -109,7 +109,7 @@ def status_check():
     
 
 # =============================
-# Endpoint do jednorazowego liczenia korelacji
+# Endpoint do liczenia korelacji
 # =============================
 @app.get("/calculate-correlations")
 async def calculate_correlations():
@@ -153,112 +153,186 @@ async def calculate_correlations():
     return {"status": "success", "message": "Korelacje policzone i zapisane w bazie"}
 
 # =============================
+# Endpoint do liczenia ryzyka
+# =============================
+@app.get("/update-risk")
+async def update_risk():
+    """Oblicza 30-dniową zmienność dla wszystkich aktywów i zapisuje risk_score"""
+
+    assets = run_query("MATCH (a:Asset) RETURN a.id AS id, a.ticker AS ticker")
+    if not assets:
+        raise HTTPException(status_code=400, detail="Brak aktywów w bazie")
+
+    tickers = [a["ticker"] for a in assets]
+
+    end_date = datetime.now() - timedelta(days=1)
+    start_date = end_date - timedelta(days=60)
+
+    try:
+        price_data = yf.download(
+            tickers,
+            start=start_date.strftime("%Y-%m-%d"),
+            end=end_date.strftime("%Y-%m-%d"),
+            interval="1d"
+        )["Close"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd pobierania danych: {e}")
+
+    if price_data.empty:
+        raise HTTPException(status_code=404, detail="Brak danych cenowych")
+
+    log_returns = price_data.pct_change().dropna()
+    volatility_30d = log_returns.tail(30).std()
+    vol_dict = volatility_30d.to_dict()
+
+    vols = [v for v in vol_dict.values() if v == v]
+    min_vol = min(vols) if vols else 0
+    max_vol = max(vols) if vols else 0
+
+    def scale_risk(vol):
+        if vol != vol:  # NaN
+            return 0
+        if max_vol == min_vol:
+            return 0
+        return int(100 * (vol - min_vol) / (max_vol - min_vol))
+
+    for rec in assets:
+        vol = vol_dict.get(rec["ticker"], 0)
+        risk_score = scale_risk(vol)
+        run_query("""
+            MATCH (a:Asset {id: $id})
+            SET a.risk_score = $risk,
+                a.risk_last_update = timestamp()
+        """, {"id": rec["id"], "risk": risk_score})
+
+    return {"status": "success", "message": "Ryzyko obliczone i zapisane"}
+
+# =============================
+# ENDPOINTY - wartosc portfela
+# =============================
+@app.get("/portfolio/value")
+def get_portfolio_value():
+    try:
+        res = run_query("""
+        MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)-[:HAS_PRICE]->(price:Price)
+        RETURN sum(r.amount * price.last_price) AS value
+        """)
+        value = res[0]['value'] if res else 0
+        return {"value": value}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd pobierania wartości portfela: {e}")
+# =============================
 # ENDPOINTY - aktywa
 # =============================
-
-# @app.get("/assets")
-# def get_assets():
-#     query = """
-#     MATCH (a:Asset)-[:HAS_PRICE]->(p:Price)
-#     OPTIONAL MATCH (a)-[:BELONGS_TO]->(c:AssetClass)
-#     OPTIONAL MATCH (c)-[:SUBCLASS_OF]->(g:AssetGroup)
-#     RETURN a.id AS id,
-#            a.name AS name,
-#            c.name AS asset_class,
-#            g.name AS asset_group,
-#            round(p.last_price, 4) AS value,
-#            p.last_price_ts AS price_ts
-#     ORDER BY a.id
-#     """
-#     return run_query(query)
-
 
 @app.get("/assets")
 def get_assets():
     query = """
     MATCH (a:Asset)-[:HAS_PRICE]->(p:Price)
     OPTIONAL MATCH (a)-[:BELONGS_TO]->(c:AssetClass)
-    OPTIONAL MATCH (c)-[:SUBCLASS_OF]->(g:AssetGroup)
     RETURN a.id AS id,
            a.name AS name,
            c.name AS asset_class,
-           g.name AS asset_group,
+           a.risk_score AS risk_score,
            round(p.last_price, 4) AS value,
+           p.currency AS currency,
            p.last_price_ts AS price_ts
     ORDER BY a.id
     """
-    return run_query(query)
+    try:
+        result = run_query(query)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd pobierania aktywów: {e}")
 
-# @app.get("/assets")
-# def get_assets():
-#     query = """
-#     MATCH (a:Asset)-[:HAS_PRICE]->(p:Price)
-#     OPTIONAL MATCH (a)-[:BELONGS_TO]->(c:AssetClass)
-#     OPTIONAL MATCH (c)-[:SUBCLASS_OF]->(g:AssetGroup)
-#     RETURN a.id AS id,
-#            a.name AS name,
-#            head(collect(c.name)) AS asset_class,
-#            head(collect(g.name)) AS asset_group,
-#            round(p.last_price, 4) AS value,
-#            p.last_price_ts AS price_ts
-#     ORDER BY a.id
-#     """
-#     return run_query(query)
 
 
 @app.put("/assets/{asset_id}/price")
 def update_asset_price(asset_id: str):
     """Ręczna aktualizacja ceny pojedynczego aktywa"""
-    result = run_query("""
-        MATCH (a:Asset {id:$id})-[:HAS_PRICE]->(p:Price)
-        RETURN a.id AS id, a.ticker AS ticker
-    """, {"id": asset_id})
+    try:
+        # Pobranie aktywa
+        result = run_query("""
+            MATCH (a:Asset {id:$id})-[:HAS_PRICE]->(p:Price)
+            RETURN a.id AS id, a.ticker AS ticker
+        """, {"id": asset_id})
 
-    if not result:
-        return {"error": f"Nie znaleziono aktywa {asset_id}"}
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Nie znaleziono aktywa {asset_id}")
 
-    ticker = result[0].get("ticker")
-    price = fetch_price(ticker) if ticker else 0.0
+        ticker = result[0].get("ticker")
+        if not ticker:
+            raise HTTPException(status_code=400, detail=f"Brak tickera dla aktywa {asset_id}")
 
-    run_query("""
-        MATCH (a:Asset {id: $id})-[:HAS_PRICE]->(p:Price)
-        SET p.last_price = $price,
-            p.last_price_ts = timestamp()
-    """, {"id": asset_id, "price": price})
+        # Pobranie ceny
+        price = fetch_price(ticker)
 
-    return {"asset": asset_id, "price": price}
+        # Aktualizacja ceny w bazie
+        run_query("""
+            MATCH (a:Asset {id: $id})-[:HAS_PRICE]->(p:Price)
+            SET p.last_price = $price,
+                p.last_price_ts = timestamp()
+        """, {"id": asset_id, "price": price})
+
+        return {"asset": asset_id, "price": price}
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd aktualizacji ceny: {e}")
+
+@app.post("/assets")
+def add_asset(asset: dict):
+    """Dodanie lub aktualizacja nowego aktywa z inicjalizacją risk_score"""
+    if "id" not in asset or "name" not in asset:
+        raise HTTPException(status_code=400, detail="Brak wymaganego pola 'id' lub 'name'")
+
+    query = """
+    MERGE (a:Asset {id:$id})
+    SET a.name = $name,
+        a.ticker = $ticker,
+        a.risk_score = coalesce(a.risk_score, 0),
+        a.risk_last_update = coalesce(a.risk_last_update, timestamp())
+    MERGE (a)-[:HAS_PRICE]->(p:Price)
+    ON CREATE SET p.last_price=0.0,
+                  p.last_price_ts=timestamp(),
+                  p.currency=$currency
+    """
+    try:
+        run_query(query, {
+            "id": asset["id"],
+            "name": asset["name"],
+            "ticker": asset.get("ticker"),
+            "currency": asset.get("currency", "USD")
+        })
+        return {"message": f"Aktywo {asset['name']} dodane/zmodyfikowane"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd dodawania aktywa: {e}")
 
 @app.post("/assets")
 def add_asset(asset: dict):
     """Dodanie lub aktualizacja nowego aktywa"""
     query = """
-    MERGE (a:Asset {id:$id})
-    SET a.name=$name, a.ticker=$ticker
-    MERGE (a)-[:HAS_PRICE]->(p:Price)
-    ON CREATE SET p.last_price=0.0, p.last_price_ts=timestamp()
-    """
-    run_query(query, {"id": asset["id"], "name": asset["name"], "ticker": asset.get("ticker")})
-    return {"message": f"Aktywo {asset['name']} dodane/zmodyfikowane"}
+        MERGE (a:Asset {id:$id})
+        SET a.name=$name, a.ticker=$ticker
+        MERGE (a)-[:HAS_PRICE]->(p:Price)
+        ON CREATE SET p.last_price=0.0, p.last_price_ts=timestamp()
+        """
+    # Walidacja minimalna
+    if "id" not in asset or "name" not in asset:
+        raise HTTPException(status_code=400, detail="Brak wymaganego pola 'id' lub 'name'")
 
+    try:
+        run_query(query, {"id": asset["id"], "name": asset["name"], "ticker": asset.get("ticker")})
+        return {"message": f"Aktywo {asset['name']} dodane/zmodyfikowane"}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd dodawania aktywa: {e}")
 
 # =============================
 # ENDPOINTY PORTFELU
 # =============================
-# @app.get("/portfolio")
-# def get_portfolio():
-#     """Pobranie portfela użytkownika z klasą i ceną"""
-#     query = """
-#     MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)-[:HAS_PRICE]->(price:Price)
-#     MATCH (a)-[:BELONGS_TO]->(cls:AssetClass)
-#     RETURN
-#         a.id AS asset_id,
-#         a.name AS name,
-#         cls.name AS asset_class,
-#         r.amount AS amount,
-#         round(price.last_price, 2) AS current_price
-#     ORDER BY a.id
-#     """
-#     return run_query(query)
+
 
 @app.get("/portfolio")
 def get_portfolio():
@@ -274,103 +348,117 @@ def get_portfolio():
         round(price.last_price, 2) AS current_price
     ORDER BY a.id
     """
-    return run_query(query)
+    try:
+        result = run_query(query)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd pobierania portfela: {e}")
 
 
 @app.get("/portfolio/graph")
 def get_portfolio_graph():
     """Zwraca węzły i krawędzie portfela dla grafu"""
-    nodes_query = """
-    MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)
-    RETURN 
-        a.id AS asset_id, 
-        a.name AS name, 
-        r.amount AS amount, 
-        a.value AS current_price
-    """
-    nodes = run_query(nodes_query)
-    asset_ids = [n["asset_id"] for n in nodes]
-
-    if asset_ids:
-        links_query = f"""
-        MATCH (a:Asset)-[r:CORRELATED]->(b:Asset)
-        WHERE a.id IN {asset_ids} AND b.id IN {asset_ids}
+    try:
+        # Pobranie węzłów portfela
+        nodes_query = """
+        MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)
         RETURN 
-            a.id AS source, 
-            b.id AS target, 
-            r.value AS value
+            a.id AS asset_id, 
+            a.name AS name, 
+            r.amount AS amount, 
+            a.value AS current_price
         """
-        links = run_query(links_query)
-    else:
-        links = []
+        nodes = run_query(nodes_query)
+        asset_ids = [n["asset_id"] for n in nodes]
 
-    return {"nodes": nodes, "links": links}
+        # Pobranie powiązań (korelacji) między aktywami w portfelu
+        if asset_ids:
+            links_query = f"""
+            MATCH (a:Asset)-[r:CORRELATED]->(b:Asset)
+            WHERE a.id IN {asset_ids} AND b.id IN {asset_ids}
+            RETURN 
+                a.id AS source, 
+                b.id AS target, 
+                r.value AS value
+            """
+            links = run_query(links_query)
+        else:
+            links = []
+
+        return {"nodes": nodes, "links": links}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd pobierania grafu portfela: {e}")
+    
 
 @app.post("/portfolio")
 def add_to_portfolio(item: PortfolioItemModel):
     """Dodanie nowego aktywa do portfela"""
-    query = f"""
-    MATCH (p:Portfolio {{name:'MojPortfel'}}), (a:Asset {{id:'{item.asset_id}'}})
-    MERGE (p)-[r:CONTAINS]->(a)
-    SET r.amount = coalesce(r.amount,0) + {item.amount}
-    """
-    run_query(query)
-    return {"message": f"Dodano {item.amount} jednostek aktywa {item.asset_id} do portfela"}
+    # Walidacja minimalna
+    if item.amount <= 0:
+        raise HTTPException(status_code=400, detail="Ilość dodawanego aktywa musi być większa niż 0")
+
+    try:
+        query = f"""
+        MATCH (p:Portfolio {{name:'MojPortfel'}}), (a:Asset {{id:'{item.asset_id}'}})
+        MERGE (p)-[r:CONTAINS]->(a)
+        SET r.amount = coalesce(r.amount,0) + {item.amount}
+        """
+        result = run_query(query)
+
+        # Jeśli nie znaleziono Portfolio lub Asset, można też rzucić 400
+        if result is None:
+            raise HTTPException(status_code=400, detail=f"Nie znaleziono portfela lub aktywa {item.asset_id}")
+
+        return {"message": f"Dodano {item.amount} jednostek aktywa {item.asset_id} do portfela"}
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd dodawania do portfela: {e}")
 
 @app.put("/portfolio")
 def update_portfolio_item(item: PortfolioItemModel):
     """Aktualizacja ilości jednostek aktywa w portfelu"""
-    query = f"""
-    MATCH (p:Portfolio {{name:'MojPortfel'}})-[r:CONTAINS]->(a:Asset {{id:'{item.asset_id}'}})
-    SET r.amount = {item.amount}
-    """
-    run_query(query)
-    return {"message": f"Ilość aktywa {item.asset_id} w portfelu zaktualizowana na {item.amount}"}
+    # Minimalna walidacja
+    if item.amount < 0:
+        raise HTTPException(status_code=400, detail="Ilość jednostek nie może być ujemna")
+
+    try:
+        query = f"""
+        MATCH (p:Portfolio {{name:'MojPortfel'}})-[r:CONTAINS]->(a:Asset {{id:'{item.asset_id}'}})
+        SET r.amount = {item.amount}
+        """
+        result = run_query(query)
+
+        # Jeśli nie znaleziono relacji, można rzucić 400
+        if result is None:
+            raise HTTPException(status_code=400, detail=f"Nie znaleziono portfela lub aktywa {item.asset_id}")
+
+        return {"message": f"Ilość aktywa {item.asset_id} w portfelu zaktualizowana na {item.amount}"}
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd aktualizacji portfela: {e}")
 
 @app.delete("/portfolio/{asset_id}")
 def remove_from_portfolio(asset_id: str):
     """Usunięcie aktywa z portfela użytkownika"""
-    query = f"""
-    MATCH (p:Portfolio {{name:'MojPortfel'}})-[r:CONTAINS]->(a:Asset {{id:'{asset_id}'}})
-    DELETE r
-    """
-    run_query(query)
-    return {"message": f"Aktywo {asset_id} usunięte z portfela"}
+    try:
+        query = f"""
+        MATCH (p:Portfolio {{name:'MojPortfel'}})-[r:CONTAINS]->(a:Asset {{id:'{asset_id}'}})
+        DELETE r
+        """
+        result = run_query(query)
 
-# =============================
-# ENDPOINTY ANALITYCZNE
-# =============================
-@app.get("/recommend/top_correlated/{asset_id}")
-def get_top_correlated(asset_id: str, limit: int = 10):
-    """Znajdź najbardziej skorelowane aktywa dla danego assetu"""
-    query = f"""
-    MATCH (a:Asset {{id:'{asset_id}'}})-[r:CORRELATED]->(other:Asset)
-    RETURN 
-        other.id AS id, 
-        other.name AS name, 
-        r.value AS correlation
-    ORDER BY abs(r.value) DESC
-    LIMIT {limit}
-    """
-    return run_query(query)
+        # Jeśli nie znaleziono relacji, można rzucić 400
+        if result is None:
+            raise HTTPException(status_code=400, detail=f"Nie znaleziono aktywa {asset_id} w portfelu")
 
-@app.get("/recommend/diversifiers")
-def get_diversifiers(limit: int = 10):
-    """Znajdź dywersyfikatory portfela (niska lub ujemna korelacja)"""
-    query = f"""
-    MATCH (p:Portfolio {{name:'MojPortfel'}})-[:CONTAINS]->(pa:Asset)
-    WITH collect(pa) AS portAssets
-    MATCH (candidate:Asset)
-    WHERE NOT candidate IN portAssets
-    WITH portAssets, candidate
-    MATCH (pa)-[r:CORRELATED]->(candidate)
-    WHERE pa IN portAssets
-    WITH candidate, avg(r.value) AS avgCorr
-    RETURN 
-        candidate.id AS id, 
-        candidate.name AS name, 
-        avgCorr
-    ORDER BY avgCorr ASC
-    LIMIT {limit}
-    """
-    return run_query(query)
+        return {"message": f"Aktywo {asset_id} usunięte z portfela"}
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd usuwania aktywa z portfela: {e}")

@@ -13,7 +13,7 @@
         <li data-tab="dashboard" class="active">Dashboard</li>
         <li data-tab="assets">Aktywa</li>
         <li data-tab="portfolio">Portfel</li>
-        <li data-tab="recommend">Rekomendacje</li>
+        <!-- <li data-tab="recommend">Rekomendacje</li> -->
     </ul>
     <div id="portfolio-value">
         Wartość: <span id="portfolio-amount">0</span> zł
@@ -21,7 +21,6 @@
 </nav>
 
 <main>
-
 
     <!-- Dashboard -->
     <section id="dashboard" class="tab active">
@@ -31,18 +30,12 @@
 
     <!-- Aktywa -->
     <section id="assets" class="tab">
-        <h1>Aktywa</h1>
+        <div class="assets-header" style="display:flex; align-items:center; justify-content:space-between;">
+            <h1>Aktywa</h1>
+            <button id="updateRiskBtn">Oblicz ryzyko aktywów</button>
+        </div>
         <div id="assets-list"></div>
     </section>
-
-    <!-- Portfel
-    <section id="portfolio" class="tab">
-        <h1>Portfel użytkownika</h1>
-        <div id="portfolio-container">
-            <div id="portfolio-table"></div>
-            <div id="portfolio-graph"></div>
-        </div>
-    </section> -->
 
     <!-- Portfel -->
     <section id="portfolio" class="tab">
@@ -56,25 +49,8 @@
         </div>
     </section>
 
-    <!-- Rekomendacje -->
-    <section id="recommend" class="tab">
-        <h1>Rekomendacje</h1>
-        <div id="recommend-list"></div>
-    </section>
 </main>
 
-<!-- Modal dodawania aktywa -->
-<!-- <div id="addAssetModal" class="modal">
-    <div class="modal-content">
-        <h3>Dodaj aktywo do portfela</h3>
-        <label>Wybierz aktywo:</label>
-        <select id="asset-select"></select>
-        <label>Ilość:</label>
-        <input type="number" id="asset-amount" min="0">
-        <button onclick="confirmAddAsset()">Dodaj</button>
-        <button onclick="closeModal()">Anuluj</button>
-    </div>
-</div> -->
 
 <script type="module" src="js/main.js"></script>
 </body>

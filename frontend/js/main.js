@@ -1,44 +1,47 @@
+// main.js
 // =============================
 // Import funkcji API i grafu
-import { fetchBackendStatus, fetchPortfolio, fetchPortfolioGraph, fetchAssets, fetchDiversifiers, fetchCorrelations } from './api.js';
+import { 
+    fetchBackendStatus, fetchPortfolio, fetchPortfolioGraph, 
+    fetchAssets, fetchCorrelations, fetchRisk, fetchPortfolioValue,
+    fetchPortfolioAdd, fetchPortfolioUpdate, fetchPortfolioRemove
+} from './api.js';
 import { drawPortfolioGraph } from './graph.js';
+
 
 // =============================
 // Zakładki SPA
 document.querySelectorAll('nav ul li').forEach(tab => {
     tab.addEventListener('click', () => {
-        // Reset aktywnej zakładki
         document.querySelectorAll('nav ul li').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab').forEach(s => s.classList.remove('active'));
-        
-        tab.classList.add('active');
-        document.getElementById(tab.dataset.tab).classList.add('active');
 
-        // Wywołanie funkcji ładowania danych dla zakładki
+        tab.classList.add('active');
+
+        const activeTab = document.getElementById(tab.dataset.tab);
+        activeTab.classList.add('active');
+
         if (tab.dataset.tab === "portfolio") loadPortfolio();
         if (tab.dataset.tab === "assets") loadAssets();
-        if (tab.dataset.tab === "recommend") loadRecommendations();
+        if (tab.dataset.tab === "dashboard") loadDashboard();
     });
 });
-
 
 // =============================
 // Wartość portfela 
 async function updatePortfolioValue() {
     try {
-        const response = await fetch('/api/portfolio/value'); // Twój endpoint
-        if (!response.ok) throw new Error('Błąd pobierania wartości portfela');
-        const data = await response.json();
-        document.getElementById('portfolio-value').textContent = `Wartość: ${data.value} zł`;
-    } catch (error) {
-        console.error(error);
-        document.getElementById('portfolio-value').textContent = 'Wartość: błąd';
+        const result = await fetchPortfolioValue();
+        const total = Number(result.value ?? 0);
+        document.getElementById('portfolio-amount').textContent = total.toFixed(2);
+    } catch (err) {
+        console.error("Błąd wartości portfela:", err);
+        document.getElementById('portfolio-amount').textContent = "błąd";
     }
 }
+// setInterval(updatePortfolioValue, 10000);
+// updatePortfolioValue();
 
-// Odświeżanie wartości co np. 10 sekund
-setInterval(updatePortfolioValue, 10000);
-updatePortfolioValue(); // od razu przy ładowaniu
 
 // =============================
 // Dashboard – status backendu
@@ -62,78 +65,42 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 // =============================
+// Dashboard
+async function loadDashboard() {
+    await updatePortfolioValue();
+}
+// =============================
 // Portfel
-
 async function loadPortfolioTable() {
     const portfolio = await fetchPortfolio();
     renderPortfolioTable(portfolio);
 }
 
 async function loadPortfolioGraph() {
-    const portfolioGraph = await fetchPortfolioGraph(); // nodes + links
+    const portfolioGraph = await fetchPortfolioGraph();
     const nodes = portfolioGraph.nodes.map(a => ({ id: a.asset_id, name: a.name }));
     const links = portfolioGraph.links.map(l => ({ source: l.source, target: l.target, value: l.value }));
     drawPortfolioGraph({ nodes, links });
 }
 
-// Ładowanie całej zakładki
 async function loadPortfolio() {
-    loadPortfolioTable();
-    loadPortfolioGraph();
+    await loadPortfolioTable();
+    await loadPortfolioGraph();
+    await updatePortfolioValue();
     initPortfolioButton();
 }
 
-// Funkcja otwierająca modal z listą wszystkich aktywów
-
-// window.openAddAssetModal = async function () {
-//     const res = await fetch('http://localhost:8000/assets');
-//     const assets = await res.json();
-
-//     const modal = document.createElement('div');
-//     modal.className = 'modal';   // ma display:none w CSS
-//     modal.innerHTML = `
-//         <div class="modal-content">
-//             <span class="close" style="float:right;cursor:pointer;font-size:22px;">&times;</span>
-//             <h3>Dodaj nowe aktywo</h3>
-
-//             <label>Wybierz aktywo:</label>
-//             <select id="selectAsset">
-//                 ${assets.map(a => `<option value="${a.id}">${a.id} – ${a.name}</option>`).join('')}
-//             </select>
-
-//             <label>Ilość:</label>
-//             <input type="number" id="newAmount" min="0.01" step="0.01">
-
-//             <button id="confirmAdd">Dodaj</button>
-//         </div>
-//     `;
-
-//     document.body.appendChild(modal);
-
-//     // 🔥 KLUCZOWE — włącz modal
-//     modal.style.display = "flex";
-
-//     modal.querySelector('.close').onclick = () => modal.remove();
-
-//     modal.querySelector('#confirmAdd').onclick = async () => {
-//         const id = document.getElementById('selectAsset').value;
-//         const amount = Number(document.getElementById('newAmount').value);
-
-//         if (!amount || amount <= 0) {
-//             alert("Podaj poprawną ilość");
-//             return;
-//         }
-
-//         await addToPortfolio(id, amount);
-//         modal.remove();
-//     };
-// };
-
+// =============================
+// Aktywa
+async function loadAssets() {
+    await loadAssetsTab();
+    await updatePortfolioValue();
+    initRiskButton();
+}
+// =============================
+// Modal dodawania aktywa
 window.openAddAssetModal = async function () {
-    const res = await fetch('http://localhost:8000/assets');
-    const assets = await res.json();
-
-    // lista unikalnych klas
+    const assets = await fetchAssets();
     const classes = [...new Set(assets.map(a => a.asset_class || "-"))];
 
     const modal = document.createElement('div');
@@ -159,7 +126,7 @@ window.openAddAssetModal = async function () {
             </select>
 
             <label>Ilość:</label>
-            <input type="number" id="newAmount" min="0.01" step="0.01">
+            <input type="number" id="newAmount" min="0.0001" step="0.0001">
 
             <button id="confirmAdd">Dodaj</button>
         </div>
@@ -172,18 +139,15 @@ window.openAddAssetModal = async function () {
     const selectAsset = modal.querySelector('#selectAsset');
     const filterClass = modal.querySelector('#filterClass');
 
-    // 🔍 FILTROWANIE PO KLASIE
     filterClass.onchange = () => {
         const selected = filterClass.value;
-
         selectAsset.innerHTML = assets
             .filter(a => !selected || a.asset_class === selected)
             .map(a => `
                 <option value="${a.id}" data-class="${a.asset_class}">
                     ${a.id} – ${a.name}
                 </option>`
-            )
-            .join('');
+            ).join('');
     };
 
     modal.querySelector('#confirmAdd').onclick = async () => {
@@ -195,13 +159,20 @@ window.openAddAssetModal = async function () {
             return;
         }
 
-        await addToPortfolio(id, amount);
-        modal.remove();
+        try {
+            await addToPortfolio(id, amount);
+            modal.remove();
+            await loadPortfolio();
+        } catch (err) {
+            console.error(err);
+            alert('Błąd przy dodawaniu aktywa do portfela');
+        }
     };
 };
 
 
-// ------------------
+// =============================
+// Render tabeli portfela
 let portfolioSort = { column: null, asc: true };
 
 function renderPortfolioTable(data) {
@@ -217,7 +188,7 @@ function renderPortfolioTable(data) {
         { label: "Nazwa", key: "name" },
         { label: "Klasa", key: "asset_class" },
         { label: "Ilość", key: "amount" },
-        { label: "Wartość", key: "current_price" },
+        { label: "Wartość pozycji", key: "value" },
         { label: "", key: "actions" }
     ];
 
@@ -226,34 +197,40 @@ function renderPortfolioTable(data) {
 
     columns.forEach(col => {
         const th = document.createElement('th');
-        th.style.position = 'relative';
         th.style.padding = '8px';
-        th.style.background = '#f2f2f2';
         th.style.border = '1px solid #ccc';
-        th.style.cursor = col.key !== "actions" ? 'pointer' : 'default';
+        th.style.background = '#f2f2f2';
+        
+        if (col.key === "actions") {
+            // Tutaj wstaw przycisk zamiast pustego tekstu
+            const btnAdd = document.createElement('button');
+            btnAdd.innerText = "Dodaj nowe aktywo";
+            btnAdd.style.width = "100%";
+            btnAdd.style.backgroundColor = '#4b9762ff';; // zielone tło
+            btnAdd.style.color = "white";           // biały tekst
+            btnAdd.style.border = "none";           // opcjonalnie usuń obramowanie
+            btnAdd.style.padding = "4px 8px";       // dopasowanie do rozmiaru
+            btnAdd.style.borderRadius = "4px";      // lekko zaokrąglone rogi
+            btnAdd.style.display = "block";
+            btnAdd.onclick = () => openAddAssetModal();
+            th.appendChild(btnAdd);
+        } else {
+            th.innerText = col.label;
+            th.style.cursor = "pointer";
 
-        th.innerText = col.label;
-
-        if (col.key !== "actions") {
             const arrowBox = document.createElement('span');
-            arrowBox.className = 'sort-arrow-box';
+            arrowBox.className = "sort-arrow-box";
             arrowBox.style.position = 'absolute';
             arrowBox.style.right = '8px';
             arrowBox.style.top = '50%';
             arrowBox.style.transform = 'translateY(-50%)';
-            arrowBox.style.display = 'flex';
-            arrowBox.style.flexDirection = 'column';
-            arrowBox.style.lineHeight = '0.8em';
-            arrowBox.style.userSelect = 'none';
-
             arrowBox.innerHTML = `
                 <span class="arrow-up neutral">▲</span>
                 <span class="arrow-down neutral">▼</span>
             `;
-
             th.appendChild(arrowBox);
 
-            th.addEventListener('click', () => {
+            th.addEventListener("click", () => {
                 sortPortfolioTable(data, col.key);
                 renderPortfolioTable(data);
             });
@@ -262,49 +239,129 @@ function renderPortfolioTable(data) {
         headerRow.appendChild(th);
     });
 
+    // columns.forEach(col => {
+    //     const th = document.createElement('th');
+    //     th.style.padding = '8px';
+    //     th.style.border = '1px solid #ccc';
+    //     th.style.background = '#f2f2f2';
+    //     th.innerText = col.label;
+
+    //     if (col.key !== "actions") {
+    //         th.style.cursor = "pointer";
+    //         const arrowBox = document.createElement('span');
+    //         arrowBox.className = "sort-arrow-box";
+    //         arrowBox.style.position = 'absolute';
+    //         arrowBox.style.right = '8px';
+    //         arrowBox.style.top = '50%';
+    //         arrowBox.style.transform = 'translateY(-50%)';
+    //         arrowBox.innerHTML = `
+    //             <span class="arrow-up neutral">▲</span>
+    //             <span class="arrow-down neutral">▼</span>
+    //         `;
+    //         th.appendChild(arrowBox);
+
+    //         th.addEventListener("click", () => {
+    //             sortPortfolioTable(data, col.key);
+    //             renderPortfolioTable(data);
+    //         });
+    //     }
+
+    //     headerRow.appendChild(th);
+    // });
+
     thead.appendChild(headerRow);
     table.appendChild(thead);
 
-    // TBODY
     const tbody = document.createElement('tbody');
 
     data.forEach(item => {
-        const price = item.current_price !== null && item.current_price !== undefined
-            ? Number(item.current_price).toFixed(2)
-            : '-';
-
         const row = document.createElement('tr');
-        row.innerHTML = `
-            <td class="id-col">${item.asset_id}</td>
-            <td class="name-col">${item.name}</td>
-            <td class="class-col">${item.asset_class || '-'}</td>
-            <td class="amount-col">
-                <input type="number" value="${item.amount}" min="0" id="amount-${item.asset_id}">
-            </td>
-            <td class="price-col">${price}</td>
-            <td class="actions-col">
-                <button onclick="updatePortfolio('${item.asset_id}')">Aktualizuj</button>
-                <button onclick="removeFromPortfolio('${item.asset_id}')">Usuń</button>
-            </td>
-        `;
+
+        // aktualna cena jednostkowa z backendu
+        const unitPrice = Number(item.current_price ?? 0);
+        const amount = Number(item.amount ?? 0);
+        const positionValue = unitPrice * amount;
+
+        [
+            item.asset_id,
+            item.name,
+            item.asset_class,
+            amount,
+            positionValue.toFixed(2)
+        ].forEach((text, idx) => {
+            const td = document.createElement('td');
+            td.style.border = '1px solid #ccc';
+            td.style.padding = '8px';
+            td.innerText = text;
+            if(idx === 4) td.style.textAlign = "right";
+            row.appendChild(td);
+        });
+
+        // INPUT dla ilości
+        const input = document.createElement('input');
+        input.type = "number";
+        input.step = "0.0001";
+        input.value = amount;
+        input.id = `amount-${item.asset_id}`;
+        input.style.width = "80px";
+
+        row.children[3].innerHTML = "";
+        row.children[3].appendChild(input);
+
+        // Akcje
+        const actions = document.createElement('td');
+        actions.style.border = '1px solid #ccc';
+        actions.style.padding = '8px';
+        actions.style.width = "120px";       // stała szerokość kolumny
+        actions.style.textAlign = "center"; // wyśrodkowanie przycisków
+
+        const btnUpdate = document.createElement('button');
+        btnUpdate.innerText = "Aktualizuj";
+        btnUpdate.style.display = "block";  // jeden pod drugim
+        btnUpdate.style.width = "100%";
+        btnUpdate.style.marginBottom = "4px"; // odstęp między przyciskami
+        btnUpdate.style.backgroundColor = '#436fceff';; // zielone tło
+        btnUpdate.style.color = "white";           // biały tekst
+        btnUpdate.style.border = "none";           // opcjonalnie usuń obramowanie
+        btnUpdate.style.padding = "4px 8px";       // dopasowanie do rozmiaru
+        btnUpdate.style.borderRadius = "4px";      // lekko zaokrąglone rogi
+        btnUpdate.onclick = () => updatePortfolio(item.asset_id);   
+
+        const btnRemove = document.createElement('button');
+        btnRemove.innerText = "Usuń";
+        btnRemove.style.display = "block";
+        btnRemove.style.width = "100%";
+        btnRemove.style.marginBottom = "4px"; // odstęp między przyciskami
+        btnRemove.style.backgroundColor = '#c46565ff';; // zielone tło
+        btnRemove.style.color = "white";           // biały tekst
+        btnRemove.style.border = "none";           // opcjonalnie usuń obramowanie
+        btnRemove.style.padding = "4px 8px";       // dopasowanie do rozmiaru
+        btnRemove.style.borderRadius = "4px";      // lekko zaokrąglone rogi
+        btnRemove.style.textAlign = "center"; // tekst w środku
+        btnRemove.onclick = () => removeFromPortfolio(item.asset_id);   
+
+        actions.appendChild(btnUpdate);
+        actions.appendChild(btnRemove);
+        row.appendChild(actions);
+
         tbody.appendChild(row);
     });
 
-    // Dodawanie nowego aktywa
-    const addRow = document.createElement('tr');
-    addRow.innerHTML = `
-        <td colspan="6" class="add-row">
-            <button onclick="openAddAssetModal()">Dodaj nowe aktywo</button>
-        </td>
-    `;
-    tbody.appendChild(addRow);
+    // const addRow = document.createElement('tr');
+    // addRow.innerHTML = `
+    //     <td colspan="6" style="text-align:center; padding:12px;">
+    //         <button id="addNewAssetRowBtn">Dodaj nowe aktywo</button>
+    //     </td>
+    // `;
+    // tbody.appendChild(addRow);
 
     table.appendChild(tbody);
     container.appendChild(table);
 
+    // document.getElementById('addNewAssetRowBtn').onclick = () => openAddAssetModal();
+
     updatePortfolioSortArrows(table);
 }
-
 
 function sortPortfolioTable(data, column) {
     if (portfolioSort.column === column) {
@@ -315,17 +372,22 @@ function sortPortfolioTable(data, column) {
     }
 
     data.sort((a, b) => {
-        let A = a[column] ?? '';
-        let B = b[column] ?? '';
+        let A, B;
+
+        if (column === "value") {
+            A = (Number(a.current_price) || 0) * (Number(a.amount) || 0);
+            B = (Number(b.current_price) || 0) * (Number(b.amount) || 0);
+        } else {
+            A = a[column] ?? '';
+            B = b[column] ?? '';
+        }
 
         const numA = parseFloat(A);
         const numB = parseFloat(B);
-
         const numeric = !isNaN(numA) && !isNaN(numB);
 
         if (numeric) {
-            A = numA;
-            B = numB;
+            A = numA; B = numB;
         } else {
             A = String(A).toLowerCase();
             B = String(B).toLowerCase();
@@ -337,25 +399,27 @@ function sortPortfolioTable(data, column) {
     });
 }
 
-
 function updatePortfolioSortArrows(table) {
-    const headers = ["asset_id", "name", "asset_class", "amount", "current_price"];
+    const headers = ["asset_id", "name", "asset_class", "amount", "value"];
     const ths = table.querySelectorAll('th');
 
     ths.forEach((th, idx) => {
         const up = th.querySelector('.arrow-up');
         const down = th.querySelector('.arrow-down');
-
         if (!up || !down) return;
 
-        // Reset
+        // ustawienie wielkości identycznej jak w aktywach
+        up.style.fontSize = "12px";      // dopasuj do pożądanego rozmiaru
+        down.style.fontSize = "12px";
+        up.style.lineHeight = "12px";
+        down.style.lineHeight = "12px";
+
         up.style.opacity = "0.5";
         down.style.opacity = "0.5";
         up.style.color = "#777";
         down.style.color = "#777";
 
         const key = headers[idx];
-
         if (key !== portfolioSort.column) return;
 
         if (portfolioSort.asc) {
@@ -371,87 +435,15 @@ function updatePortfolioSortArrows(table) {
 }
 
 
-// function renderPortfolioTable(data) {
-//     const container = document.getElementById('portfolio-table');
-//     container.innerHTML = '';
-
-//     const table = document.createElement('table');
-//     const header = document.createElement('tr');
-//     header.innerHTML = `
-//         <th class="id-col">ID</th>
-//         <th class="name-col">Nazwa</th>
-//         <th class="class-col">Klasa</th>
-//         <th class="amount-col">Ilość</th>
-//         <th class="price-col">Wartość</th>
-//         <th class="actions-col"> </th>
-//     `;
-//     table.appendChild(header);
-
-//     data.forEach(item => {
-//         const price = (item.current_price !== null && item.current_price !== undefined)
-//             ? Number(item.current_price).toFixed(2)
-//             : '-';
-//         const cls = item.asset_class || '-';
-
-//         const row = document.createElement('tr');
-//         row.innerHTML = `
-//             <td class="id-col">${item.asset_id}</td>
-//             <td class="name-col">${item.name}</td>
-//             <td class="class-col">${cls}</td>
-//             <td class="amount-col">
-//                 <input type="number" value="${item.amount}" min="0" id="amount-${item.asset_id}">
-//             </td>
-//             <td class="price-col">${price}</td>
-//             <td class="actions-col">
-//                 <button onclick="updatePortfolio('${item.asset_id}')">Aktualizuj</button>
-//                 <button onclick="removeFromPortfolio('${item.asset_id}')">Usuń</button>
-//             </td>
-//         `;
-//         table.appendChild(row);
-//     });
-
-//     // Dodawanie nowego aktywa przez modal
-//     const addRow = document.createElement('tr');
-//     addRow.innerHTML = `
-//         <td colspan="6" class="add-row">
-//             <button onclick="openAddAssetModal()">Dodaj nowe aktywo</button>
-//         </td>
-//     `;
-//     table.appendChild(addRow);
-
-//     container.appendChild(table);
-// }
-
 // =============================
-// Zakładka Aktywa
-// async function loadAssets() {
-//     const data = await fetchAssets();
-//     const container = document.getElementById('assets-list');
-//     container.innerHTML = '<h3>Lista aktywów:</h3>';
-
-//     const ul = document.createElement('ul');
-//     data.forEach(a => {
-//         const price = (a.value !== null && a.value !== undefined) ? Number(a.value).toFixed(4) : '-';
-//         const type = a.type || '-';
-//         const group = a.group || '-';
-//         const li = document.createElement('li');
-//         // li.innerText = `${a.id} - ${a.name} | Typ: ${type} | Grupa: ${group} | Cena: ${price}`;
-//         li.innerText = `${a.id} - ${a.name} | Klasa: ${a.asset_class || '-'} | Grupa: ${a.asset_group || '-'} | Cena: ${a.value ?? '-'}`;
-//         ul.appendChild(li);
-//     });
-//     container.appendChild(ul);
-// }
-
-
-
+// ASSETS LIST (risk_score zamiast grupy)
 let assetSort = { column: null, asc: true };
 
-async function loadAssets() {
+async function loadAssetsTab() {
     const data = await fetchAssets();
     const container = document.getElementById('assets-list');
-    container.innerHTML = ''; // czyścimy
+    container.innerHTML = '';
 
-    // Tworzymy tabelę
     const table = document.createElement('table');
     table.style.width = '100%';
     table.style.borderCollapse = 'collapse';
@@ -460,11 +452,10 @@ async function loadAssets() {
         { label: 'ID', key: 'id' },
         { label: 'Nazwa', key: 'name' },
         { label: 'Klasa', key: 'asset_class' },
-        { label: 'Grupa', key: 'asset_group' },
+        { label: 'Ryzyko', key: 'risk_score' },
         { label: 'Cena', key: 'value' }
     ];
 
-    // THEAD
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
 
@@ -472,15 +463,11 @@ async function loadAssets() {
         const th = document.createElement('th');
         th.style.border = '1px solid #ccc';
         th.style.padding = '8px';
-        th.style.textAlign = 'left';
         th.style.backgroundColor = '#f2f2f2';
         th.style.cursor = 'pointer';
         th.style.position = 'relative';
-
-        // Tekst nagłówka
         th.innerText = col.label;
 
-        // Box z dwiema strzałkami
         const arrowBox = document.createElement('span');
         arrowBox.className = 'sort-arrow-box';
         arrowBox.style.position = 'absolute';
@@ -489,8 +476,6 @@ async function loadAssets() {
         arrowBox.style.transform = 'translateY(-50%)';
         arrowBox.style.display = 'flex';
         arrowBox.style.flexDirection = 'column';
-        arrowBox.style.lineHeight = '0.8em';
-        arrowBox.style.userSelect = 'none';
 
         arrowBox.innerHTML = `
             <span class="arrow-up neutral">▲</span>
@@ -499,10 +484,9 @@ async function loadAssets() {
 
         th.appendChild(arrowBox);
 
-        // Kliknięcie sortujące
         th.addEventListener('click', () => {
             sortAssets(data, col.key);
-            loadAssetsRender(data); // render bez ponownego fetch
+            renderAssetsTable(data, table);
         });
 
         headerRow.appendChild(th);
@@ -511,15 +495,11 @@ async function loadAssets() {
     thead.appendChild(headerRow);
     table.appendChild(thead);
 
-    // TBODY (render osobno)
-    loadAssetsRender(data, table);
-
+    renderAssetsTable(data, table);
     container.appendChild(table);
 }
 
-
-// Render samego TBODY
-function loadAssetsRender(data, table = null) {
+function renderAssetsTable(data, table) {
     if (!table) table = document.querySelector('#assets-list table');
     const oldTbody = table.querySelector('tbody');
     if (oldTbody) oldTbody.remove();
@@ -529,15 +509,23 @@ function loadAssetsRender(data, table = null) {
     data.forEach(a => {
         const row = document.createElement('tr');
 
-        const price =
-            (a.value !== null && a.value !== undefined)
-                ? Number(a.value).toFixed(4)
-                : '-';
+        // Risk scaling: jeśli backend zwraca 0..1 (lub 0..100), skalujemy do 0..100
+        let rawRisk = a.risk_score;
+        let riskScaled;
+        if (rawRisk === null || rawRisk === undefined || isNaN(Number(rawRisk))) {
+            riskScaled = '-';
+        } else {
+            let r = Number(rawRisk);
+            // jeśli w [0,1] -> pomnóż przez 100
+            if (r >= 0 && r <= 1) r = r * 100;
+            // jeśli >100 -> clamp
+            r = Math.max(0, Math.min(100, r));
+            riskScaled = Math.round(r).toString();
+        }
 
-        const assetClass = a.asset_class || '-';
-        const assetGroup = a.asset_group || '-';
+        const price = (a.value !== null && a.value !== undefined) ? Number(a.value).toFixed(2) : '-';
 
-        [a.id, a.name, assetClass, assetGroup, price].forEach(text => {
+        [a.id, a.name, a.asset_class || '-', riskScaled, price].forEach(text => {
             const td = document.createElement('td');
             td.innerText = text;
             td.style.border = '1px solid #ccc';
@@ -549,12 +537,9 @@ function loadAssetsRender(data, table = null) {
     });
 
     table.appendChild(tbody);
-
-    updateSortArrows(table);
+    updateAssetSortArrows(table);
 }
 
-
-// Sortowanie danych
 function sortAssets(data, column) {
     if (assetSort.column === column) {
         assetSort.asc = !assetSort.asc;
@@ -566,18 +551,12 @@ function sortAssets(data, column) {
     data.sort((a, b) => {
         let A = a[column] ?? '';
         let B = b[column] ?? '';
-
         const numA = parseFloat(A);
         const numB = parseFloat(B);
         const numeric = !isNaN(numA) && !isNaN(numB);
 
-        if (numeric) {
-            A = numA;
-            B = numB;
-        } else {
-            A = String(A).toLowerCase();
-            B = String(B).toLowerCase();
-        }
+        if (numeric) { A = numA; B = numB; } 
+        else { A = String(A).toLowerCase(); B = String(B).toLowerCase(); }
 
         if (A < B) return assetSort.asc ? -1 : 1;
         if (A > B) return assetSort.asc ? 1 : -1;
@@ -585,164 +564,101 @@ function sortAssets(data, column) {
     });
 }
 
-
-// AKTUALIZACJA STRZAŁEK
-function updateSortArrows(table) {
-    const headers = ['id', 'name', 'asset_class', 'asset_group', 'value'];
+function updateAssetSortArrows(table) {
+    const headers = ['id', 'name', 'asset_class', 'risk_score', 'value'];
     const ths = table.querySelectorAll('th');
 
     ths.forEach((th, idx) => {
         const up = th.querySelector('.arrow-up');
         const down = th.querySelector('.arrow-down');
 
-        // Reset - obie neutralne
-        up.classList.add('neutral');
-        down.classList.add('neutral');
+        if (!up || !down) return;
+
+        // Ustawienie tej samej wielkości jak w portfelu
+        up.style.fontSize = "12px";
+        down.style.fontSize = "12px";
+        up.style.lineHeight = "12px";
+        down.style.lineHeight = "12px";
 
         up.style.opacity = "0.5";
         down.style.opacity = "0.5";
-
         up.style.color = "#777";
         down.style.color = "#777";
 
         const key = headers[idx];
         if (key !== assetSort.column) return;
 
-        // Jeśli to ta kolumna — pokazujemy aktywną jedną strzałkę
         if (assetSort.asc) {
-            up.classList.remove('neutral');
             up.style.opacity = "1";
             up.style.color = "black";
-
             down.style.opacity = "0";
         } else {
-            down.classList.remove('neutral');
             down.style.opacity = "1";
             down.style.color = "black";
-
             up.style.opacity = "0";
         }
     });
 }
 
 
-
-// async function loadAssets() {
-//     const data = await fetchAssets();
-//     const container = document.getElementById('assets-list');
-//     container.innerHTML = ''; // czyścimy zawartość
-
-//     // Tworzymy tabelę
-//     const table = document.createElement('table');
-//     table.style.width = '100%';
-//     table.style.borderCollapse = 'collapse';
-
-//     // Nagłówki
-//     const thead = document.createElement('thead');
-//     const headerRow = document.createElement('tr');
-//     ['ID', 'Nazwa', 'Klasa', 'Grupa', 'Cena'].forEach(text => {
-//         const th = document.createElement('th');
-//         th.innerText = text;
-//         th.style.border = '1px solid #ccc';
-//         th.style.padding = '8px';
-//         th.style.textAlign = 'left';
-//         th.style.backgroundColor = '#f2f2f2';
-//         headerRow.appendChild(th);
-//     });
-//     thead.appendChild(headerRow);
-//     table.appendChild(thead);
-
-//     // Dane
-//     const tbody = document.createElement('tbody');
-//     data.forEach(a => {
-//         const row = document.createElement('tr');
-
-//         const price = (a.value !== null && a.value !== undefined) ? Number(a.value).toFixed(4) : '-';
-//         const assetClass = a.asset_class || '-';
-//         const assetGroup = a.asset_group || '-';
-
-//         [a.id, a.name, assetClass, assetGroup, price].forEach(text => {
-//             const td = document.createElement('td');
-//             td.innerText = text;
-//             td.style.border = '1px solid #ccc';
-//             td.style.padding = '8px';
-//             row.appendChild(td);
-//         });
-
-//         tbody.appendChild(row);
-//     });
-//     table.appendChild(tbody);
-
-//     container.appendChild(table);
-// }
-
-
 // =============================
-// Zakładka Rekomendacje
-async function loadRecommendations() {
-    const data = await fetchDiversifiers();
-    const container = document.getElementById('recommend-list');
-    container.innerHTML = '<h3>Dywersyfikatory portfela:</h3>';
+// Portfolio actions
+window.addToPortfolio = async function(asset_id, amount) {
+    try {
+        await fetchPortfolioAdd(asset_id, amount);
+        await loadPortfolio();
+    } catch (err) {
+        console.error(err);
+        alert("Błąd dodawania aktywa");
+    }
+};
 
-    const ul = document.createElement('ul');
-    data.forEach(item => {
-        const li = document.createElement('li');
-        li.innerText = `${item.id} - ${item.name} | średnia korelacja: ${item.avgCorr.toFixed(2)}`;
-        ul.appendChild(li);
-    });
-    container.appendChild(ul);
-}
-
-// =============================
-// CRUD funkcje globalne
-
-// Dodanie aktywa do portfela
-window.addToPortfolio = async function(asset_id, amount){
-    await fetch(`http://localhost:8000/portfolio`, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ asset_id, amount })
-    });
-    loadPortfolio();
-}
-
-window.updatePortfolio = async function(asset_id){
+window.updatePortfolio = async function(asset_id) {
     const amount = Number(document.getElementById(`amount-${asset_id}`).value);
 
+    if (isNaN(amount) || amount < 0) {
+        alert("Nieprawidłowa ilość");
+        return;
+    }
+
+    // ilość 0 = usuń
     if (amount === 0) {
         await removeFromPortfolio(asset_id);
         return;
     }
 
-    await fetch(`http://localhost:8000/portfolio`, {
-        method: 'PUT',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ asset_id, amount })
-    });
+    try {
+        await fetchPortfolioUpdate(asset_id, amount);
+        await loadPortfolio();
+    } catch (err) {
+        console.error(err);
+        alert("Błąd aktualizacji pozycji");
+    }
+};
 
-    loadPortfolio();
-}
+window.removeFromPortfolio = async function(asset_id) {
+    if (!confirm(`Czy na pewno chcesz usunąć ${asset_id}?`)) return;
 
-window.removeFromPortfolio = async function(asset_id){
-    await fetch(`http://localhost:8000/portfolio/${asset_id}`, {method:'DELETE'});
-    loadPortfolio();
-}
+    try {
+        await fetchPortfolioRemove(asset_id);
+        await loadPortfolio();
+    } catch (err) {
+        console.error(err);
+        alert("Błąd usuwania pozycji");
+    }
+};
 
 
-
-// ##########################################################################################
-
-// Funkcja wywoływana po kliknięciu przycisku
+// =============================
+// Korelacje
 export async function loadCorrelations() {
     const btn = document.getElementById('computeCorrBtn');
+    if (!btn) return;
     btn.disabled = true;
     btn.innerText = 'Obliczanie...';
 
     try {
-        // Wywołanie endpointu, który liczy korelacje i zapisuje w bazie
-        await fetch('http://localhost:8000/calculate-correlations');
-        console.log("✅ Korelacje obliczone i zapisane w bazie");
-        // Odśwież graf portfela
+        await fetchCorrelations();
         await loadPortfolioGraph();
     } catch (err) {
         console.error("Błąd obliczania korelacji:", err);
@@ -753,11 +669,40 @@ export async function loadCorrelations() {
     }
 }
 
-// Dodanie listenera przy ładowaniu zakładki
 export function initPortfolioButton() {
     const btn = document.getElementById('computeCorrBtn');
     if (btn && !btn.dataset.listenerAdded) {
         btn.dataset.listenerAdded = 'true';
         btn.addEventListener('click', loadCorrelations);
+    }
+}
+
+// =============================
+// Ryzyko aktywów — analogiczne 1:1 do korelacji
+// =============================
+export async function loadRiskScores() {
+    const btn = document.getElementById('updateRiskBtn');
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.innerText = 'Obliczanie...';
+
+    try {
+        await fetchRisk();   // Twój backend
+        await loadAssetsTab();  // odśwież tabelę po obliczeniach
+    } catch (err) {
+        console.error("Błąd obliczania ryzyka:", err);
+        alert("Błąd przy obliczaniu ryzyka");
+    } finally {
+        btn.disabled = false;
+        btn.innerText = 'Oblicz ryzyko aktywów';
+    }
+}
+
+export function initRiskButton() {
+    const btn = document.getElementById('updateRiskBtn');
+    if (btn && !btn.dataset.listenerAdded) {
+        btn.dataset.listenerAdded = 'true';
+        btn.addEventListener('click', loadRiskScores);
     }
 }
