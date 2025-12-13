@@ -33,12 +33,12 @@ async def lifespan(app: FastAPI):
 class AssetModel(BaseModel):
     id: str
     name: str
-    type: str = None  # np. Akcje, Obligacje, Kryptowaluty
-    value: float = 0.0  # aktualna cena
+    type: str = None
+    value: float = 0.0
 
 class PortfolioItemModel(BaseModel):
     asset_id: str
-    amount: float  # ile jednostek użytkownik posiada
+    amount: float
 
 # =============================
 # CENY - Aktualizowanie
@@ -48,18 +48,18 @@ def fetch_price(ticker: str) -> float | None:
     Jeśli brak nowych danych, zwraca None."""
     try:
         yf_ticker = yf.Ticker(ticker)
-        data = yf_ticker.history(period="5d")  # pobieramy kilka ostatnich dni
+        data = yf_ticker.history(period="5d")
         if data.empty:
             return None
         # bierzemy ostatni dostępny dzień
         last_close = float(data["Close"].iloc[-1])
         return last_close
     except Exception as e:
-        print(f"⚠ Błąd pobierania ceny dla {ticker}: {e}")
+        print(f"Błąd pobierania ceny dla {ticker}: {e}")
         return None
 
 def update_all_prices():
-    print(f"⏳ Aktualizuję ceny... ({datetime.now()})")
+    print(f"Aktualizuję ceny... ({datetime.now()})")
 
     assets = run_query("""
         MATCH (a:Asset)-[:HAS_PRICE]->(p:Price)
@@ -79,10 +79,10 @@ def update_all_prices():
                 SET p.last_price = $price,
                     p.last_price_ts = timestamp()
             """, {"id": asset_id, "price": new_price})
-            print(f"✔ {asset_id} → {new_price}")
+            print(f"{asset_id} → {new_price}")
         else:
             # brak nowych danych, zostawiamy poprzednią cenę
-            print(f"⚠ {asset_id} brak nowych danych, zostawiamy {last_price}")
+            print(f"{asset_id} brak nowych danych, zostawiamy {last_price}")
 
 # =============================
 # POŁĄCZENIE
@@ -246,89 +246,76 @@ def get_assets():
         raise HTTPException(status_code=500, detail=f"Błąd pobierania aktywów: {e}")
 
 
-
-@app.put("/assets/{asset_id}/price")
-def update_asset_price(asset_id: str):
-    """Ręczna aktualizacja ceny pojedynczego aktywa"""
-    try:
-        # Pobranie aktywa
-        result = run_query("""
-            MATCH (a:Asset {id:$id})-[:HAS_PRICE]->(p:Price)
-            RETURN a.id AS id, a.ticker AS ticker
-        """, {"id": asset_id})
-
-        if not result:
-            raise HTTPException(status_code=404, detail=f"Nie znaleziono aktywa {asset_id}")
-
-        ticker = result[0].get("ticker")
-        if not ticker:
-            raise HTTPException(status_code=400, detail=f"Brak tickera dla aktywa {asset_id}")
-
-        # Pobranie ceny
-        price = fetch_price(ticker)
-
-        # Aktualizacja ceny w bazie
-        run_query("""
-            MATCH (a:Asset {id: $id})-[:HAS_PRICE]->(p:Price)
-            SET p.last_price = $price,
-                p.last_price_ts = timestamp()
-        """, {"id": asset_id, "price": price})
-
-        return {"asset": asset_id, "price": price}
-
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Błąd aktualizacji ceny: {e}")
-
 @app.post("/assets")
 def add_asset(asset: dict):
-    """Dodanie lub aktualizacja nowego aktywa z inicjalizacją risk_score"""
-    if "id" not in asset or "name" not in asset:
-        raise HTTPException(status_code=400, detail="Brak wymaganego pola 'id' lub 'name'")
+    # Walidacja minimalna
+    if not all(k in asset for k in ("id", "name", "asset_class")):
+        raise HTTPException(
+            status_code=400,
+            detail="Wymagane pola: id, name, asset_class"
+        )
 
     query = """
-    MERGE (a:Asset {id:$id})
+    MERGE (a:Asset {id: $id})
     SET a.name = $name,
         a.ticker = $ticker,
+        a.currency = $currency,
         a.risk_score = coalesce(a.risk_score, 0),
-        a.risk_last_update = coalesce(a.risk_last_update, timestamp())
+        a.risk_last_update = timestamp()
+
+    MERGE (c:AssetClass {name: $asset_class})
+    MERGE (a)-[:BELONGS_TO]->(c)
+
     MERGE (a)-[:HAS_PRICE]->(p:Price)
-    ON CREATE SET p.last_price=0.0,
-                  p.last_price_ts=timestamp(),
-                  p.currency=$currency
+    ON CREATE SET
+        p.last_price = 0.0,
+        p.last_price_ts = timestamp()
     """
+
     try:
         run_query(query, {
             "id": asset["id"],
             "name": asset["name"],
+            "asset_class": asset["asset_class"],
             "ticker": asset.get("ticker"),
             "currency": asset.get("currency", "USD")
         })
-        return {"message": f"Aktywo {asset['name']} dodane/zmodyfikowane"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Błąd dodawania aktywa: {e}")
 
-@app.post("/assets")
-def add_asset(asset: dict):
-    """Dodanie lub aktualizacja nowego aktywa"""
+        return {"message": f"Aktywo {asset['id']} dodane / zaktualizowane"}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Błąd dodawania aktywa: {e}"
+        )
+
+@app.delete("/assets/{asset_id}")
+def remove_asset(asset_id: str):
     query = """
-        MERGE (a:Asset {id:$id})
-        SET a.name=$name, a.ticker=$ticker
-        MERGE (a)-[:HAS_PRICE]->(p:Price)
-        ON CREATE SET p.last_price=0.0, p.last_price_ts=timestamp()
-        """
-    # Walidacja minimalna
-    if "id" not in asset or "name" not in asset:
-        raise HTTPException(status_code=400, detail="Brak wymaganego pola 'id' lub 'name'")
+    MATCH (a:Asset {id: $id})
+    DETACH DELETE a
+    RETURN count(a) AS deleted
+    """
 
     try:
-        run_query(query, {"id": asset["id"], "name": asset["name"], "ticker": asset.get("ticker")})
-        return {"message": f"Aktywo {asset['name']} dodane/zmodyfikowane"}
+        result = run_query(query, {"id": asset_id})
 
+        if not result or result[0]["deleted"] == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Aktywo {asset_id} nie istnieje"
+            )
+
+        return {"message": f"Aktywo {asset_id} zostało usunięte"}
+
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Błąd dodawania aktywa: {e}")
-
+        raise HTTPException(
+            status_code=500,
+            detail=f"Błąd usuwania aktywa: {e}"
+        )
+    
 # =============================
 # ENDPOINTY PORTFELU
 # =============================
@@ -462,3 +449,32 @@ def remove_from_portfolio(asset_id: str):
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Błąd usuwania aktywa z portfela: {e}")
+    
+
+
+@app.get("/portfolio/class-distribution")
+def portfolio_class_distribution():
+    """
+    Zwraca procentową wartość portfela podzieloną na klasy aktywów.
+    """
+    query = """
+    MATCH (p:Portfolio {name:"MojPortfel"})-[pc:CONTAINS]->(a:Asset)-[:HAS_PRICE]->(pr:Price)
+    MATCH (a)-[:BELONGS_TO]->(c:AssetClass)
+    WITH c.name AS class, SUM(pr.last_price * pc.amount) AS class_value
+    RETURN class, class_value
+    """
+    try:
+        result = run_query(query)
+        # Obliczamy całkowitą wartość portfela
+        total_value = sum(r["class_value"] for r in result) or 1
+        # Zwracamy procenty
+        return [
+            {
+                "class": r["class"], 
+                "value": r["class_value"], 
+                "percent": r["class_value"]/total_value*100
+            }
+            for r in result
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd obliczania rozkładu klas: {e}")

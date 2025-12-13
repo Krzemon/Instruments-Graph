@@ -13,7 +13,6 @@
         <li data-tab="dashboard" class="active">Dashboard</li>
         <li data-tab="assets">Aktywa</li>
         <li data-tab="portfolio">Portfel</li>
-        <!-- <li data-tab="recommend">Rekomendacje</li> -->
     </ul>
     <div id="portfolio-value">
         Wartość: <span id="portfolio-amount">0</span> zł
@@ -22,19 +21,25 @@
 
 <main>
 
-    <!-- Dashboard -->
     <section id="dashboard" class="tab active">
-        <h1>Dashboard</h1>
-        <div id="backend-status"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h1>Zawartość procentowa klas aktywów w portfelu</h1>
+            <div id="backend-status"></div>
+        </div>
+        <div id="dashboard-pie" style="width: 100%; height: 900px; margin-top: 20px;"></div>
     </section>
 
     <!-- Aktywa -->
     <section id="assets" class="tab">
-        <div class="assets-header" style="display:flex; align-items:center; justify-content:space-between;">
-            <h1>Aktywa</h1>
-            <button id="updateRiskBtn">Oblicz ryzyko aktywów</button>
+    <div class="assets-header" style="display:flex; align-items:center; justify-content:space-between;">
+        <h1>Dostępne aktywa</h1>
+        <div style="display:flex; gap:8px;"> <!-- kontener przycisków -->
+            <button id="updateRiskBtn" style="background-color:rgb(187, 187, 62); color:white;">Oblicz ryzyko</button>
+            <button id="addAssetBtn" style="background-color:green; color:white;">Dodaj aktywo</button>
+            <button id="removeAssetBtn" style="background-color:red; color:white;">Usuń aktywo</button>
         </div>
-        <div id="assets-list"></div>
+    </div>
+    <div id="assets-list"></div>
     </section>
 
     <!-- Portfel -->

@@ -46,9 +46,25 @@ export async function fetchPortfolioValue() {
     return await res.json();
 }
 
+// Usuń aktywo
+export async function fetchRemoveAsset(asset_id) {
+    return await fetch(`${BASE}/assets/${asset_id}`, {
+        method: "DELETE"
+    }).then(r => r.json());
+}
+
 // =============================
 // PORTFOLIO OPERATIONS
 // =============================
+
+// Dodaj lub zaktualizuj aktywo
+export async function fetchAddAsset(asset) {
+    return await fetch(`${BASE}/assets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(asset)
+    }).then(r => r.json());
+}
 
 // Dodaj aktywo do portfela
 export async function fetchPortfolioAdd(asset_id, amount) {
@@ -73,4 +89,13 @@ export async function fetchPortfolioRemove(asset_id) {
     return await fetch(`${BASE}/portfolio/${asset_id}`, {
         method: "DELETE"
     }).then(r => r.json());
+}
+
+// =============================
+// Pobranie procentowej wartości klas aktywów w portfelu
+// =============================
+export async function fetchPortfolioClassDistribution() {
+    const res = await fetch(`${BASE}/portfolio/class-distribution`);
+    if (!res.ok) throw new Error("Błąd pobierania danych o klasach aktywów");
+    return await res.json(); // zwróci tablicę obiektów {class, value, percent}
 }

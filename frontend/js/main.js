@@ -1,13 +1,13 @@
-// main.js
 // =============================
 // Import funkcji API i grafu
 import { 
     fetchBackendStatus, fetchPortfolio, fetchPortfolioGraph, 
     fetchAssets, fetchCorrelations, fetchRisk, fetchPortfolioValue,
-    fetchPortfolioAdd, fetchPortfolioUpdate, fetchPortfolioRemove
+    fetchPortfolioAdd, fetchPortfolioUpdate, fetchPortfolioRemove,
+    fetchAddAsset, fetchRemoveAsset, fetchPortfolioClassDistribution
 } from './api.js';
 import { drawPortfolioGraph } from './graph.js';
-
+import { drawPortfolioPieChart } from './pieChart.js';
 
 // =============================
 // Zakładki SPA
@@ -45,7 +45,45 @@ async function updatePortfolioValue() {
 
 // =============================
 // Dashboard – status backendu
-window.addEventListener('DOMContentLoaded', async () => {
+// window.addEventListener('DOMContentLoaded', async () => {
+//     const status = await fetchBackendStatus();
+//     const container = document.getElementById('backend-status');
+//     container.innerHTML = '';
+
+//     const icon = document.createElement('span');
+//     icon.style.display='inline-block';
+//     icon.style.width='16px';
+//     icon.style.height='16px';
+//     icon.style.borderRadius='50%';
+//     icon.style.background = status.neo4j_connection ? 'green' : 'red';
+
+//     const text = document.createElement('span');
+//     text.innerText = status.neo4j_connection ? 'Połączono z bazą Neo4j' : 'Brak połączenia z bazą';
+
+//     container.appendChild(icon);
+//     container.appendChild(text);
+// });
+
+window.addEventListener('DOMContentLoaded', () => {
+    loadDashboard();
+});
+
+// =============================
+// Dashboard
+// async function loadDashboard() {
+//     await updatePortfolioValue();
+// }
+
+async function loadDashboard() {
+    await updatePortfolioValue();
+    await updateBackendStatus();
+
+    // pobranie danych
+    const data = await fetchPortfolioClassDistribution(); 
+    drawPortfolioPieChart(data); // przekazujemy dane do funkcji
+}
+
+async function updateBackendStatus() {
     const status = await fetchBackendStatus();
     const container = document.getElementById('backend-status');
     container.innerHTML = '';
@@ -59,16 +97,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     const text = document.createElement('span');
     text.innerText = status.neo4j_connection ? 'Połączono z bazą Neo4j' : 'Brak połączenia z bazą';
+    text.style.marginLeft = '8px'; // odstęp od ikony
 
     container.appendChild(icon);
     container.appendChild(text);
-});
-
-// =============================
-// Dashboard
-async function loadDashboard() {
-    await updatePortfolioValue();
 }
+
 // =============================
 // Portfel
 async function loadPortfolioTable() {
@@ -96,6 +130,7 @@ async function loadAssets() {
     await loadAssetsTab();
     await updatePortfolioValue();
     initRiskButton();
+    initAssetButtons(); 
 }
 // =============================
 // Modal dodawania aktywa
@@ -704,5 +739,70 @@ export function initRiskButton() {
     if (btn && !btn.dataset.listenerAdded) {
         btn.dataset.listenerAdded = 'true';
         btn.addEventListener('click', loadRiskScores);
+    }
+}
+
+// Funkcja obsługująca dodawanie aktywa
+export async function handleAddAsset() {
+    const id = prompt("Podaj ID aktywa (unikalne):")?.trim();
+    if (!id) return alert("ID aktywa jest wymagane");
+
+    const name = prompt("Podaj nazwę aktywa:")?.trim();
+    if (!name) return alert("Nazwa aktywa jest wymagana");
+
+    const asset_class = prompt(
+        "Podaj klasę aktywa (np. Akcje, Kryptowaluty, Surowce, Forex, Obligacje):"
+    )?.trim();
+
+    if (!asset_class) return alert("Klasa aktywa jest wymagana");
+
+    const asset = { id, name, asset_class };
+
+    const ticker = prompt("Podaj ticker aktywa (opcjonalnie):")?.trim();
+    if (ticker) asset.ticker = ticker;
+
+    const currency = prompt("Podaj walutę (domyślnie USD):")?.trim();
+    if (currency) asset.currency = currency;
+
+    try {
+        const res = await fetchAddAsset(asset);
+        alert(res.message);
+        await loadAssetsTab(); // odśwież tabelę
+    } catch (err) {
+        console.error("Błąd dodawania aktywa:", err);
+        alert("Nie udało się dodać aktywa");
+    }
+}
+
+// Funkcja obsługująca usuwanie aktywa
+export async function handleRemoveAsset() {
+    const asset_id = prompt("Podaj ID aktywa do usunięcia:")?.trim();
+    if (!asset_id) return;
+
+    if (!confirm(`Czy na pewno chcesz usunąć aktywo ${asset_id}?`)) return;
+
+    try {
+        const res = await fetchRemoveAsset(asset_id);
+        alert(res.message);
+        await loadAssetsTab(); // odśwież tabelę
+    } catch (err) {
+        console.error("Błąd usuwania aktywa:", err);
+        alert("Nie udało się usunąć aktywa");
+    }
+}
+
+export function initAssetButtons() {
+    // Dodaj aktywo
+    const addBtn = document.getElementById('addAssetBtn');
+    if (addBtn && !addBtn.dataset.listenerAdded) {
+        addBtn.dataset.listenerAdded = 'true';
+        addBtn.addEventListener('click', handleAddAsset);
+    }
+
+    // Usuń aktywo — jeden przycisk
+    const removeBtn = document.getElementById('removeAssetBtn');
+    if (removeBtn && !removeBtn.dataset.listenerAdded) {
+        removeBtn.dataset.listenerAdded = 'true';
+        removeBtn.addEventListener('click', handleRemoveAsset);
     }
 }
