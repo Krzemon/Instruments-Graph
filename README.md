@@ -76,20 +76,6 @@ python -m http.server 8080
 
 ```bash
 cd backend
+pip install -r requirements.txt
 uvicorn main:app --reload
-```
-
-
-### requirements.txt
-
-```bash
-fastapi
-uvicorn
-neo4j
-pydantic
-python-dotenv
-yfinance
-apscheduler
-pandas
-numpy
 ```
