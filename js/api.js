@@ -1,4 +1,4 @@
-const BASE = "https://instruments-graph.onrender.com/";
+const BASE = "https://instruments-graph.onrender.com";
 
 // Status backendu / Neo4j
 export async function fetchBackendStatus() {
