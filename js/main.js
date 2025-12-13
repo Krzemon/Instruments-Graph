@@ -265,9 +265,7 @@ function renderPortfolioTable(data) {
         th.style.border = '1px solid #ccc';
         th.style.background = '#f2f2f2';
 
-        if (col.key === "value") {
-            th.innerHTML = col.label.replace(' ', '<br>');
-        } else if (col.key === "actions") {
+        if (col.key === "actions") {
             const btnAdd = document.createElement('button');
             btnAdd.innerText = "Dodaj nowe aktywo";
             btnAdd.style.width = "100%";
@@ -280,7 +278,12 @@ function renderPortfolioTable(data) {
             btnAdd.onclick = () => openAddAssetModal();
             th.appendChild(btnAdd);
         } else {
-            th.innerText = col.label;
+            if (col.key === "value") {
+                th.innerHTML = col.label.replace(' ', '<br>');
+            } else {
+                th.innerText = col.label;
+            }
+
             th.style.cursor = "pointer";
 
             const arrowBox = document.createElement('span');
