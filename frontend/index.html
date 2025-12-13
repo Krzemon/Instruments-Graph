@@ -15,7 +15,7 @@
         <li data-tab="portfolio">Portfel</li>
     </ul>
     <div id="portfolio-value">
-        Wartość: <span id="portfolio-amount">0</span> $
+        Wartość: <span id="portfolio-amount">0</span> PLN
     </div>
 </nav>
 
@@ -34,6 +34,8 @@
     <div class="assets-header" style="display:flex; align-items:center; justify-content:space-between;">
         <h1>Dostępne aktywa</h1>
         <div style="display:flex; gap:8px;">
+            <button id="computeCorrBtn" style="background-color:rgb(56, 81, 194); color:white;">Oblicz korelacje</button>
+
             <button id="updateRiskBtn" style="background-color:rgb(187, 187, 62); color:white;">Oblicz ryzyko</button>
             <button id="addAssetBtn" style="background-color:green; color:white;">Dodaj aktywo</button>
             <button id="removeAssetBtn" style="background-color:red; color:white;">Usuń aktywo</button>
@@ -46,7 +48,9 @@
     <section id="portfolio" class="tab">
         <div class="portfolio-header" style="display:flex; align-items:center; justify-content:space-between;">
             <h1>Portfel użytkownika</h1>
-            <button id="computeCorrBtn">Oblicz korelacje z ostatniego roku</button>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span id="portfolio-risk"></span>
+            </div>
         </div>
         <div id="portfolio-container">
             <div id="portfolio-table"></div>

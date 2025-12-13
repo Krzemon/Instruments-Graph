@@ -40,9 +40,31 @@ class PortfolioItemModel(BaseModel):
     asset_id: str
     amount: float
 
+CURRENCY_TO_PLN = {
+    "USD": 0.0,
+    "EUR": 0.0,
+    "CAD": 0.0,
+    "JPY": 0.0
+}
+
 # =============================
 # CENY - Aktualizowanie
 # =============================
+def fetch_currency_rates_to_PLN():
+    """Pobiera kursy walut do PLN z Yahoo Finance lub innego źródła"""
+    # używamy Yahoo Finance, np. ticker "EURPLN=X"
+    tickers = {
+        "USD": "USDPLN=X",
+        "EUR": "EURPLN=X",
+        "CAD": "CADPLN=X",
+        "JPY": "JPYPLN=X"
+    }
+    for code, ticker in tickers.items():
+        price = fetch_price(ticker)
+        if price is not None:
+            CURRENCY_TO_PLN[code] = price
+    print(f"Kursy walut do PLN zaktualizowane: {CURRENCY_TO_PLN}")
+
 def fetch_price(ticker: str) -> float | None:
     """Pobiera ostatnią cenę zamknięcia z Yahoo Finance.
     Jeśli brak nowych danych, zwraca None."""
@@ -59,7 +81,7 @@ def fetch_price(ticker: str) -> float | None:
         return None
 
 def update_all_prices():
-    print(f"Aktualizuję ceny... ({datetime.now()})")
+    print(f"Aktualizuję ceny aktywów i kursy walut... ({datetime.now()})")
 
     assets = run_query("""
         MATCH (a:Asset)-[:HAS_PRICE]->(p:Price)
@@ -81,8 +103,8 @@ def update_all_prices():
             """, {"id": asset_id, "price": new_price})
             print(f"{asset_id} → {new_price}")
         else:
-            # brak nowych danych, zostawiamy poprzednią cenę
             print(f"{asset_id} brak nowych danych, zostawiamy {last_price}")
+    fetch_currency_rates_to_PLN()          
 
 # =============================
 # POŁĄCZENIE
@@ -208,21 +230,46 @@ async def update_risk():
     return {"status": "success", "message": "Ryzyko obliczone i zapisane"}
 
 # =============================
-# ENDPOINTY - wartosc portfela
+# ENDPOINTY - wartosci aktywow w portfelu
 # =============================
-@app.get("/portfolio/value")
-def get_portfolio_value():
+
+@app.get("/portfolio/assets-pln")
+def portfolio_assets_pln():
+    """
+    Zwraca listę aktywów w portfelu:
+    - asset_id
+    - wartość w PLN (ilość * cena jednostkowa * kurs do PLN)
+    """
     try:
-        res = run_query("""
-        MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)-[:HAS_PRICE]->(price:Price)
-        RETURN sum(r.amount * price.last_price) AS value
-        """)
-        value = res[0]['value'] if res else 0
-        return {"value": value}
+        # Pobranie aktywów z portfela
+        query = """
+        MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)-[:HAS_PRICE]->(pr:Price)
+        RETURN a.id AS asset_id,
+               a.currency AS currency,
+               r.amount AS amount,
+               pr.last_price AS last_price
+        """
+        portfolio_assets = run_query(query)
+
+        assets_list = []
+
+        for a in portfolio_assets:
+            currency = a['currency'] or 'USD'
+            rate_to_pln = CURRENCY_TO_PLN.get(currency, 1)
+            value_pln = (a['amount'] or 0) * (a['last_price'] or 0) * rate_to_pln
+
+            assets_list.append({
+                "asset_id": a['asset_id'],
+                "value_pln": round(value_pln, 2)
+            })
+
+        return assets_list
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Błąd pobierania wartości portfela: {e}")
+        raise HTTPException(status_code=500, detail=f"Błąd pobierania wartości aktywów w PLN: {e}")
+    
 # =============================
-# ENDPOINTY - aktywa
+# ENDPOINTY Aktywów
 # =============================
 
 @app.get("/assets")
@@ -235,7 +282,7 @@ def get_assets():
            c.name AS asset_class,
            a.risk_score AS risk_score,
            round(p.last_price, 4) AS value,
-           p.currency AS currency,
+           a.currency AS currency,
            p.last_price_ts AS price_ts
     ORDER BY a.id
     """
@@ -245,10 +292,8 @@ def get_assets():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Błąd pobierania aktywów: {e}")
 
-
 @app.post("/assets")
 def add_asset(asset: dict):
-    # Walidacja minimalna
     if not all(k in asset for k in ("id", "name", "asset_class")):
         raise HTTPException(
             status_code=400,
@@ -317,9 +362,8 @@ def remove_asset(asset_id: str):
         )
     
 # =============================
-# ENDPOINTY PORTFELU
+# ENDPOINTY PORTFELA
 # =============================
-
 
 @app.get("/portfolio")
 def get_portfolio():
@@ -346,7 +390,6 @@ def get_portfolio():
 def get_portfolio_graph():
     """Zwraca węzły i krawędzie portfela dla grafu"""
     try:
-        # Pobranie węzłów portfela
         nodes_query = """
         MATCH (p:Portfolio {name:'MojPortfel'})-[r:CONTAINS]->(a:Asset)
         RETURN 
@@ -358,7 +401,6 @@ def get_portfolio_graph():
         nodes = run_query(nodes_query)
         asset_ids = [n["asset_id"] for n in nodes]
 
-        # Pobranie powiązań (korelacji) między aktywami w portfelu
         if asset_ids:
             links_query = f"""
             MATCH (a:Asset)-[r:CORRELATED]->(b:Asset)
@@ -381,7 +423,6 @@ def get_portfolio_graph():
 @app.post("/portfolio")
 def add_to_portfolio(item: PortfolioItemModel):
     """Dodanie nowego aktywa do portfela"""
-    # Walidacja minimalna
     if item.amount <= 0:
         raise HTTPException(status_code=400, detail="Ilość dodawanego aktywa musi być większa niż 0")
 
@@ -393,7 +434,6 @@ def add_to_portfolio(item: PortfolioItemModel):
         """
         result = run_query(query)
 
-        # Jeśli nie znaleziono Portfolio lub Asset, można też rzucić 400
         if result is None:
             raise HTTPException(status_code=400, detail=f"Nie znaleziono portfela lub aktywa {item.asset_id}")
 
@@ -407,7 +447,6 @@ def add_to_portfolio(item: PortfolioItemModel):
 @app.put("/portfolio")
 def update_portfolio_item(item: PortfolioItemModel):
     """Aktualizacja ilości jednostek aktywa w portfelu"""
-    # Minimalna walidacja
     if item.amount < 0:
         raise HTTPException(status_code=400, detail="Ilość jednostek nie może być ujemna")
 
@@ -418,7 +457,6 @@ def update_portfolio_item(item: PortfolioItemModel):
         """
         result = run_query(query)
 
-        # Jeśli nie znaleziono relacji, można rzucić 400
         if result is None:
             raise HTTPException(status_code=400, detail=f"Nie znaleziono portfela lub aktywa {item.asset_id}")
 
@@ -439,7 +477,6 @@ def remove_from_portfolio(asset_id: str):
         """
         result = run_query(query)
 
-        # Jeśli nie znaleziono relacji, można rzucić 400
         if result is None:
             raise HTTPException(status_code=400, detail=f"Nie znaleziono aktywa {asset_id} w portfelu")
 
@@ -450,31 +487,3 @@ def remove_from_portfolio(asset_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Błąd usuwania aktywa z portfela: {e}")
     
-
-
-@app.get("/portfolio/class-distribution")
-def portfolio_class_distribution():
-    """
-    Zwraca procentową wartość portfela podzieloną na klasy aktywów.
-    """
-    query = """
-    MATCH (p:Portfolio {name:"MojPortfel"})-[pc:CONTAINS]->(a:Asset)-[:HAS_PRICE]->(pr:Price)
-    MATCH (a)-[:BELONGS_TO]->(c:AssetClass)
-    WITH c.name AS class, SUM(pr.last_price * pc.amount) AS class_value
-    RETURN class, class_value
-    """
-    try:
-        result = run_query(query)
-        # Obliczamy całkowitą wartość portfela
-        total_value = sum(r["class_value"] for r in result) or 1
-        # Zwracamy procenty
-        return [
-            {
-                "class": r["class"], 
-                "value": r["class_value"], 
-                "percent": r["class_value"]/total_value*100
-            }
-            for r in result
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Błąd obliczania rozkładu klas: {e}")

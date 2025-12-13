@@ -36,9 +36,9 @@ export async function fetchRisk() {
     return await res.json();
 }
 
-// Wartość portfela
-export async function fetchPortfolioValue() {
-    const res = await fetch(`${BASE}/portfolio/value`);
+// Pobranie wartości poszczególnych aktywów w PLN
+export async function fetchAssetsValuePLN() {
+    const res = await fetch(`${BASE}/portfolio/assets-pln`);
     return await res.json();
 }
 
@@ -81,11 +81,4 @@ export async function fetchPortfolioRemove(asset_id) {
     return await fetch(`${BASE}/portfolio/${asset_id}`, {
         method: "DELETE"
     }).then(r => r.json());
-}
-
-// Pobierz procentową wartość klas aktywów w portfelu
-export async function fetchPortfolioClassDistribution() {
-    const res = await fetch(`${BASE}/portfolio/class-distribution`);
-    if (!res.ok) throw new Error("Błąd pobierania danych o klasach aktywów");
-    return await res.json();
 }

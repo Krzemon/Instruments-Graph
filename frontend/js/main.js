@@ -1,8 +1,8 @@
 import { 
     fetchBackendStatus, fetchPortfolio, fetchPortfolioGraph, 
-    fetchAssets, fetchCorrelations, fetchRisk, fetchPortfolioValue,
+    fetchAssets, fetchCorrelations, fetchRisk, fetchAssetsValuePLN,
     fetchPortfolioAdd, fetchPortfolioUpdate, fetchPortfolioRemove,
-    fetchAddAsset, fetchRemoveAsset, fetchPortfolioClassDistribution
+    fetchAddAsset, fetchRemoveAsset, 
 } from './api.js';
 import { drawPortfolioGraph } from './graph.js';
 import { drawPortfolioPieChart } from './pieChart.js';
@@ -27,8 +27,13 @@ document.querySelectorAll('nav ul li').forEach(tab => {
 // Wartość portfela 
 async function updatePortfolioValue() {
     try {
-        const result = await fetchPortfolioValue();
-        const total = Number(result.value ?? 0);
+        // Pobieramy listę aktywów z wartością w PLN
+        const assetsPLN = await fetchAssetsValuePLN(); // [{asset_id, value_pln}, ...]
+
+        // Sumujemy wszystkie wartości
+        const total = assetsPLN.reduce((sum, a) => sum + (a.value_pln || 0), 0);
+
+        // Wyświetlamy wartość portfela
         document.getElementById('portfolio-amount').textContent = total.toFixed(2);
     } catch (err) {
         console.error("Błąd wartości portfela:", err);
@@ -65,20 +70,81 @@ async function loadPortfolioGraph() {
 }
 
 async function loadPortfolioTable() {
-    const portfolio = await fetchPortfolio();
-    renderPortfolioTable(portfolio);
+    try {
+        const portfolio = await fetchPortfolio();
+        const assetsPLN = await fetchAssetsValuePLN();
+        const assetMap = {};
+        assetsPLN.forEach(a => {
+            assetMap[a.asset_id] = a.value_pln ?? 0;
+        });
+
+        const mergedData = portfolio.map(p => ({
+            ...p,
+            value_pln: assetMap[p.asset_id] ?? 0
+        }));
+        renderPortfolioTable(mergedData);
+    } catch (err) {
+        console.error("Błąd ładowania tabeli portfela:", err);
+    }
+}
+
+async function updatePortfolioRisk() {
+    try {
+        const assets = await fetchAssets(); // tu są prawdziwe risk_score i wartości
+        const assetsValuePLN = await fetchAssetsValuePLN();
+        const valueMap = {};
+        assetsValuePLN.forEach(a => valueMap[a.asset_id] = a.value_pln);
+
+        let totalValue = 0;
+        let weightedRisk = 0;
+
+        assets.forEach(a => {
+            const valuePLN = valueMap[a.id] ?? 0;
+            const risk = Number(a.risk_score ?? 0);
+            weightedRisk += risk * valuePLN;
+            totalValue += valuePLN;
+        });
+
+        const portfolioRisk = totalValue ? Math.round(weightedRisk / totalValue) : 0;
+
+        const riskContainer = document.getElementById('portfolio-risk');
+        riskContainer.innerHTML = `<strong>Ryzyko portfela:</strong> ${portfolioRisk}/100`;
+
+    } catch (err) {
+        console.error("Błąd liczenia ryzyka portfela:", err);
+    }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
     loadDashboard();
 });
+
 // -------------------------------------
 // Zakładka Dashboard
 async function loadDashboard() {
-    await updatePortfolioValue();
-    await updateBackendStatus();
-    const data = await fetchPortfolioClassDistribution(); 
-    drawPortfolioPieChart(data);
+    try {
+        await updatePortfolioValue();
+        await updateBackendStatus();
+        const assetsPLN = await fetchAssetsValuePLN();
+        const portfolio = await fetchPortfolio();
+        const classTotals = {};
+        const assetMap = {};
+        assetsPLN.forEach(a => {
+            const p = portfolio.find(pf => pf.asset_id === a.asset_id);
+            const cls = (p?.asset_class || "Inne");
+            classTotals[cls] = (classTotals[cls] || 0) + (a.value_pln || 0);
+            assetMap[a.asset_id] = { ...p, value_pln: a.value_pln };
+        });
+        const totalValue = Object.values(classTotals).reduce((sum, v) => sum + v, 0) || 1;
+        const classDistribution = Object.entries(classTotals).map(([cls, val]) => ({
+            class: cls,
+            value: val,
+            percent: (val / totalValue * 100)
+        }));
+        drawPortfolioPieChart(classDistribution);
+    } catch (err) {
+        console.error("Błąd ładowania dashboardu:", err);
+    }
 }
 
 // Zakładka Portfel
@@ -86,7 +152,7 @@ async function loadPortfolio() {
     await loadPortfolioTable();
     await loadPortfolioGraph();
     await updatePortfolioValue();
-    initPortfolioButton();
+    await updatePortfolioRisk();
 }
 
 // Zakładka Aktywa
@@ -95,6 +161,7 @@ async function loadAssets() {
     await updatePortfolioValue();
     initRiskButton();
     initAssetButtons(); 
+    initCorrelationsButton();
 }
 
 // Okno dodawania aktywa
@@ -185,7 +252,7 @@ function renderPortfolioTable(data) {
         { label: "Nazwa", key: "name" },
         { label: "Klasa", key: "asset_class" },
         { label: "Ilość", key: "amount" },
-        { label: "Wartość pozycji", key: "value" },
+        { label: "Wartość w PLN", key: "value" },
         { label: "", key: "actions" }
     ];
 
@@ -197,8 +264,10 @@ function renderPortfolioTable(data) {
         th.style.padding = '8px';
         th.style.border = '1px solid #ccc';
         th.style.background = '#f2f2f2';
-        
-        if (col.key === "actions") {
+
+        if (col.key === "value") {
+            th.innerHTML = col.label.replace(' ', '<br>');
+        } else if (col.key === "actions") {
             const btnAdd = document.createElement('button');
             btnAdd.innerText = "Dodaj nowe aktywo";
             btnAdd.style.width = "100%";
@@ -242,10 +311,8 @@ function renderPortfolioTable(data) {
 
     data.forEach(item => {
         const row = document.createElement('tr');
-
-        const unitPrice = Number(item.current_price ?? 0);
         const amount = Number(item.amount ?? 0);
-        const positionValue = unitPrice * amount;
+        const positionValue = Number(item.value_pln ?? 0);
 
         [
             item.asset_id,
@@ -262,13 +329,13 @@ function renderPortfolioTable(data) {
             row.appendChild(td);
         });
 
+        // Input do edycji ilości i przyciski akcji pozostają bez zmian
         const input = document.createElement('input');
         input.type = "number";
         input.step = "0.0001";
         input.value = amount;
         input.id = `amount-${item.asset_id}`;
         input.style.width = "80px";
-
         row.children[3].innerHTML = "";
         row.children[3].appendChild(input);
 
@@ -403,7 +470,8 @@ async function loadAssetsTab() {
         { label: 'Nazwa', key: 'name' },
         { label: 'Klasa', key: 'asset_class' },
         { label: 'Ryzyko', key: 'risk_score' },
-        { label: 'Cena', key: 'value' }
+        { label: 'Cena', key: 'value' },
+        { label: 'Waluta', key: 'currency' }
     ];
 
     const thead = document.createElement('thead');
@@ -472,7 +540,7 @@ function renderAssetsTable(data, table) {
 
         const price = (a.value !== null && a.value !== undefined) ? Number(a.value).toFixed(2) : '-';
 
-        [a.id, a.name, a.asset_class || '-', riskScaled, price].forEach(text => {
+        [a.id, a.name, a.asset_class, riskScaled, price, a.currency].forEach(text => {
             const td = document.createElement('td');
             td.innerText = text;
             td.style.border = '1px solid #ccc';
@@ -512,7 +580,7 @@ function sortAssets(data, column) {
 }
 
 function updateAssetSortArrows(table) {
-    const headers = ['id', 'name', 'asset_class', 'risk_score', 'value'];
+    const headers = ['id', 'name', 'asset_class', 'risk_score', 'value', 'currency'];
     const ths = table.querySelectorAll('th');
 
     ths.forEach((th, idx) => {
@@ -546,7 +614,7 @@ function updateAssetSortArrows(table) {
     });
 }
 
-
+// -------------------------------------
 window.addToPortfolio = async function(asset_id, amount) {
     try {
         await fetchPortfolioAdd(asset_id, amount);
@@ -599,17 +667,17 @@ async function loadCorrelations() {
 
     try {
         await fetchCorrelations();
-        await loadPortfolioGraph();
+        // await loadPortfolioGraph();
     } catch (err) {
         console.error("Błąd obliczania korelacji:", err);
         alert("Błąd przy obliczaniu korelacji");
     } finally {
         btn.disabled = false;
-        btn.innerText = 'Oblicz korelacje z ostatniego roku';
+        btn.innerText = 'Oblicz korelacje';
     }
 }
 
-function initPortfolioButton() {
+function initCorrelationsButton() {
     const btn = document.getElementById('computeCorrBtn');
     if (btn && !btn.dataset.listenerAdded) {
         btn.dataset.listenerAdded = 'true';
