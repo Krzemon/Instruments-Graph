@@ -1,5 +1,3 @@
-// =============================
-// Import funkcji API i grafu
 import { 
     fetchBackendStatus, fetchPortfolio, fetchPortfolioGraph, 
     fetchAssets, fetchCorrelations, fetchRisk, fetchPortfolioValue,
@@ -9,7 +7,6 @@ import {
 import { drawPortfolioGraph } from './graph.js';
 import { drawPortfolioPieChart } from './pieChart.js';
 
-// =============================
 // Zakładki SPA
 document.querySelectorAll('nav ul li').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -27,7 +24,6 @@ document.querySelectorAll('nav ul li').forEach(tab => {
     });
 });
 
-// =============================
 // Wartość portfela 
 async function updatePortfolioValue() {
     try {
@@ -39,50 +35,8 @@ async function updatePortfolioValue() {
         document.getElementById('portfolio-amount').textContent = "błąd";
     }
 }
-// setInterval(updatePortfolioValue, 10000);
-// updatePortfolioValue();
 
-
-// =============================
-// Dashboard – status backendu
-// window.addEventListener('DOMContentLoaded', async () => {
-//     const status = await fetchBackendStatus();
-//     const container = document.getElementById('backend-status');
-//     container.innerHTML = '';
-
-//     const icon = document.createElement('span');
-//     icon.style.display='inline-block';
-//     icon.style.width='16px';
-//     icon.style.height='16px';
-//     icon.style.borderRadius='50%';
-//     icon.style.background = status.neo4j_connection ? 'green' : 'red';
-
-//     const text = document.createElement('span');
-//     text.innerText = status.neo4j_connection ? 'Połączono z bazą Neo4j' : 'Brak połączenia z bazą';
-
-//     container.appendChild(icon);
-//     container.appendChild(text);
-// });
-
-window.addEventListener('DOMContentLoaded', () => {
-    loadDashboard();
-});
-
-// =============================
-// Dashboard
-// async function loadDashboard() {
-//     await updatePortfolioValue();
-// }
-
-async function loadDashboard() {
-    await updatePortfolioValue();
-    await updateBackendStatus();
-
-    // pobranie danych
-    const data = await fetchPortfolioClassDistribution(); 
-    drawPortfolioPieChart(data); // przekazujemy dane do funkcji
-}
-
+// Sprawdza status połączenia
 async function updateBackendStatus() {
     const status = await fetchBackendStatus();
     const container = document.getElementById('backend-status');
@@ -103,13 +57,6 @@ async function updateBackendStatus() {
     container.appendChild(text);
 }
 
-// =============================
-// Portfel
-async function loadPortfolioTable() {
-    const portfolio = await fetchPortfolio();
-    renderPortfolioTable(portfolio);
-}
-
 async function loadPortfolioGraph() {
     const portfolioGraph = await fetchPortfolioGraph();
     const nodes = portfolioGraph.nodes.map(a => ({ id: a.asset_id, name: a.name }));
@@ -117,6 +64,24 @@ async function loadPortfolioGraph() {
     drawPortfolioGraph({ nodes, links });
 }
 
+async function loadPortfolioTable() {
+    const portfolio = await fetchPortfolio();
+    renderPortfolioTable(portfolio);
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    loadDashboard();
+});
+// -------------------------------------
+// Zakładka Dashboard
+async function loadDashboard() {
+    await updatePortfolioValue();
+    await updateBackendStatus();
+    const data = await fetchPortfolioClassDistribution(); 
+    drawPortfolioPieChart(data);
+}
+
+// Zakładka Portfel
 async function loadPortfolio() {
     await loadPortfolioTable();
     await loadPortfolioGraph();
@@ -124,16 +89,15 @@ async function loadPortfolio() {
     initPortfolioButton();
 }
 
-// =============================
-// Aktywa
+// Zakładka Aktywa
 async function loadAssets() {
     await loadAssetsTab();
     await updatePortfolioValue();
     initRiskButton();
     initAssetButtons(); 
 }
-// =============================
-// Modal dodawania aktywa
+
+// Okno dodawania aktywa
 window.openAddAssetModal = async function () {
     const assets = await fetchAssets();
     const classes = [...new Set(assets.map(a => a.asset_class || "-"))];
@@ -205,9 +169,7 @@ window.openAddAssetModal = async function () {
     };
 };
 
-
-// =============================
-// Render tabeli portfela
+// tabela portfela
 let portfolioSort = { column: null, asc: true };
 
 function renderPortfolioTable(data) {
@@ -237,15 +199,14 @@ function renderPortfolioTable(data) {
         th.style.background = '#f2f2f2';
         
         if (col.key === "actions") {
-            // Tutaj wstaw przycisk zamiast pustego tekstu
             const btnAdd = document.createElement('button');
             btnAdd.innerText = "Dodaj nowe aktywo";
             btnAdd.style.width = "100%";
-            btnAdd.style.backgroundColor = '#4b9762ff';; // zielone tło
-            btnAdd.style.color = "white";           // biały tekst
-            btnAdd.style.border = "none";           // opcjonalnie usuń obramowanie
-            btnAdd.style.padding = "4px 8px";       // dopasowanie do rozmiaru
-            btnAdd.style.borderRadius = "4px";      // lekko zaokrąglone rogi
+            btnAdd.style.backgroundColor = '#4b9762ff';
+            btnAdd.style.color = "white";
+            btnAdd.style.border = "none";
+            btnAdd.style.padding = "4px 8px";
+            btnAdd.style.borderRadius = "4px";
             btnAdd.style.display = "block";
             btnAdd.onclick = () => openAddAssetModal();
             th.appendChild(btnAdd);
@@ -274,36 +235,6 @@ function renderPortfolioTable(data) {
         headerRow.appendChild(th);
     });
 
-    // columns.forEach(col => {
-    //     const th = document.createElement('th');
-    //     th.style.padding = '8px';
-    //     th.style.border = '1px solid #ccc';
-    //     th.style.background = '#f2f2f2';
-    //     th.innerText = col.label;
-
-    //     if (col.key !== "actions") {
-    //         th.style.cursor = "pointer";
-    //         const arrowBox = document.createElement('span');
-    //         arrowBox.className = "sort-arrow-box";
-    //         arrowBox.style.position = 'absolute';
-    //         arrowBox.style.right = '8px';
-    //         arrowBox.style.top = '50%';
-    //         arrowBox.style.transform = 'translateY(-50%)';
-    //         arrowBox.innerHTML = `
-    //             <span class="arrow-up neutral">▲</span>
-    //             <span class="arrow-down neutral">▼</span>
-    //         `;
-    //         th.appendChild(arrowBox);
-
-    //         th.addEventListener("click", () => {
-    //             sortPortfolioTable(data, col.key);
-    //             renderPortfolioTable(data);
-    //         });
-    //     }
-
-    //     headerRow.appendChild(th);
-    // });
-
     thead.appendChild(headerRow);
     table.appendChild(thead);
 
@@ -312,7 +243,6 @@ function renderPortfolioTable(data) {
     data.forEach(item => {
         const row = document.createElement('tr');
 
-        // aktualna cena jednostkowa z backendu
         const unitPrice = Number(item.current_price ?? 0);
         const amount = Number(item.amount ?? 0);
         const positionValue = unitPrice * amount;
@@ -332,7 +262,6 @@ function renderPortfolioTable(data) {
             row.appendChild(td);
         });
 
-        // INPUT dla ilości
         const input = document.createElement('input');
         input.type = "number";
         input.step = "0.0001";
@@ -343,36 +272,35 @@ function renderPortfolioTable(data) {
         row.children[3].innerHTML = "";
         row.children[3].appendChild(input);
 
-        // Akcje
         const actions = document.createElement('td');
         actions.style.border = '1px solid #ccc';
         actions.style.padding = '8px';
-        actions.style.width = "120px";       // stała szerokość kolumny
-        actions.style.textAlign = "center"; // wyśrodkowanie przycisków
+        actions.style.width = "120px";
+        actions.style.textAlign = "center";
 
         const btnUpdate = document.createElement('button');
         btnUpdate.innerText = "Aktualizuj";
-        btnUpdate.style.display = "block";  // jeden pod drugim
+        btnUpdate.style.display = "block";
         btnUpdate.style.width = "100%";
-        btnUpdate.style.marginBottom = "4px"; // odstęp między przyciskami
-        btnUpdate.style.backgroundColor = '#436fceff';; // zielone tło
-        btnUpdate.style.color = "white";           // biały tekst
-        btnUpdate.style.border = "none";           // opcjonalnie usuń obramowanie
-        btnUpdate.style.padding = "4px 8px";       // dopasowanie do rozmiaru
-        btnUpdate.style.borderRadius = "4px";      // lekko zaokrąglone rogi
+        btnUpdate.style.marginBottom = "4px";
+        btnUpdate.style.backgroundColor = '#436fceff';
+        btnUpdate.style.color = "white";
+        btnUpdate.style.border = "none";
+        btnUpdate.style.padding = "4px 8px";
+        btnUpdate.style.borderRadius = "4px";
         btnUpdate.onclick = () => updatePortfolio(item.asset_id);   
 
         const btnRemove = document.createElement('button');
         btnRemove.innerText = "Usuń";
         btnRemove.style.display = "block";
         btnRemove.style.width = "100%";
-        btnRemove.style.marginBottom = "4px"; // odstęp między przyciskami
-        btnRemove.style.backgroundColor = '#c46565ff';; // zielone tło
-        btnRemove.style.color = "white";           // biały tekst
-        btnRemove.style.border = "none";           // opcjonalnie usuń obramowanie
-        btnRemove.style.padding = "4px 8px";       // dopasowanie do rozmiaru
-        btnRemove.style.borderRadius = "4px";      // lekko zaokrąglone rogi
-        btnRemove.style.textAlign = "center"; // tekst w środku
+        btnRemove.style.marginBottom = "4px";
+        btnRemove.style.backgroundColor = '#c46565ff';
+        btnRemove.style.color = "white";
+        btnRemove.style.border = "none";
+        btnRemove.style.padding = "4px 8px";
+        btnRemove.style.borderRadius = "4px";
+        btnRemove.style.textAlign = "center";
         btnRemove.onclick = () => removeFromPortfolio(item.asset_id);   
 
         actions.appendChild(btnUpdate);
@@ -382,18 +310,8 @@ function renderPortfolioTable(data) {
         tbody.appendChild(row);
     });
 
-    // const addRow = document.createElement('tr');
-    // addRow.innerHTML = `
-    //     <td colspan="6" style="text-align:center; padding:12px;">
-    //         <button id="addNewAssetRowBtn">Dodaj nowe aktywo</button>
-    //     </td>
-    // `;
-    // tbody.appendChild(addRow);
-
     table.appendChild(tbody);
     container.appendChild(table);
-
-    // document.getElementById('addNewAssetRowBtn').onclick = () => openAddAssetModal();
 
     updatePortfolioSortArrows(table);
 }
@@ -443,8 +361,7 @@ function updatePortfolioSortArrows(table) {
         const down = th.querySelector('.arrow-down');
         if (!up || !down) return;
 
-        // ustawienie wielkości identycznej jak w aktywach
-        up.style.fontSize = "12px";      // dopasuj do pożądanego rozmiaru
+        up.style.fontSize = "12px";
         down.style.fontSize = "12px";
         up.style.lineHeight = "12px";
         down.style.lineHeight = "12px";
@@ -469,9 +386,7 @@ function updatePortfolioSortArrows(table) {
     });
 }
 
-
-// =============================
-// ASSETS LIST (risk_score zamiast grupy)
+// tabela aktywów
 let assetSort = { column: null, asc: true };
 
 async function loadAssetsTab() {
@@ -544,16 +459,13 @@ function renderAssetsTable(data, table) {
     data.forEach(a => {
         const row = document.createElement('tr');
 
-        // Risk scaling: jeśli backend zwraca 0..1 (lub 0..100), skalujemy do 0..100
         let rawRisk = a.risk_score;
         let riskScaled;
         if (rawRisk === null || rawRisk === undefined || isNaN(Number(rawRisk))) {
             riskScaled = '-';
         } else {
             let r = Number(rawRisk);
-            // jeśli w [0,1] -> pomnóż przez 100
             if (r >= 0 && r <= 1) r = r * 100;
-            // jeśli >100 -> clamp
             r = Math.max(0, Math.min(100, r));
             riskScaled = Math.round(r).toString();
         }
@@ -609,7 +521,6 @@ function updateAssetSortArrows(table) {
 
         if (!up || !down) return;
 
-        // Ustawienie tej samej wielkości jak w portfelu
         up.style.fontSize = "12px";
         down.style.fontSize = "12px";
         up.style.lineHeight = "12px";
@@ -636,8 +547,6 @@ function updateAssetSortArrows(table) {
 }
 
 
-// =============================
-// Portfolio actions
 window.addToPortfolio = async function(asset_id, amount) {
     try {
         await fetchPortfolioAdd(asset_id, amount);
@@ -655,13 +564,10 @@ window.updatePortfolio = async function(asset_id) {
         alert("Nieprawidłowa ilość");
         return;
     }
-
-    // ilość 0 = usuń
     if (amount === 0) {
         await removeFromPortfolio(asset_id);
         return;
     }
-
     try {
         await fetchPortfolioUpdate(asset_id, amount);
         await loadPortfolio();
@@ -684,9 +590,8 @@ window.removeFromPortfolio = async function(asset_id) {
 };
 
 
-// =============================
 // Korelacje
-export async function loadCorrelations() {
+async function loadCorrelations() {
     const btn = document.getElementById('computeCorrBtn');
     if (!btn) return;
     btn.disabled = true;
@@ -704,7 +609,7 @@ export async function loadCorrelations() {
     }
 }
 
-export function initPortfolioButton() {
+function initPortfolioButton() {
     const btn = document.getElementById('computeCorrBtn');
     if (btn && !btn.dataset.listenerAdded) {
         btn.dataset.listenerAdded = 'true';
@@ -712,10 +617,7 @@ export function initPortfolioButton() {
     }
 }
 
-// =============================
-// Ryzyko aktywów — analogiczne 1:1 do korelacji
-// =============================
-export async function loadRiskScores() {
+async function loadRiskScores() {
     const btn = document.getElementById('updateRiskBtn');
     if (!btn) return;
 
@@ -723,8 +625,8 @@ export async function loadRiskScores() {
     btn.innerText = 'Obliczanie...';
 
     try {
-        await fetchRisk();   // Twój backend
-        await loadAssetsTab();  // odśwież tabelę po obliczeniach
+        await fetchRisk();
+        await loadAssetsTab();
     } catch (err) {
         console.error("Błąd obliczania ryzyka:", err);
         alert("Błąd przy obliczaniu ryzyka");
@@ -734,7 +636,7 @@ export async function loadRiskScores() {
     }
 }
 
-export function initRiskButton() {
+function initRiskButton() {
     const btn = document.getElementById('updateRiskBtn');
     if (btn && !btn.dataset.listenerAdded) {
         btn.dataset.listenerAdded = 'true';
@@ -742,8 +644,7 @@ export function initRiskButton() {
     }
 }
 
-// Funkcja obsługująca dodawanie aktywa
-export async function handleAddAsset() {
+async function handleAddAsset() {
     const id = prompt("Podaj ID aktywa (unikalne):")?.trim();
     if (!id) return alert("ID aktywa jest wymagane");
 
@@ -767,15 +668,14 @@ export async function handleAddAsset() {
     try {
         const res = await fetchAddAsset(asset);
         alert(res.message);
-        await loadAssetsTab(); // odśwież tabelę
+        await loadAssetsTab();
     } catch (err) {
         console.error("Błąd dodawania aktywa:", err);
         alert("Nie udało się dodać aktywa");
     }
 }
 
-// Funkcja obsługująca usuwanie aktywa
-export async function handleRemoveAsset() {
+async function handleRemoveAsset() {
     const asset_id = prompt("Podaj ID aktywa do usunięcia:")?.trim();
     if (!asset_id) return;
 
@@ -784,22 +684,19 @@ export async function handleRemoveAsset() {
     try {
         const res = await fetchRemoveAsset(asset_id);
         alert(res.message);
-        await loadAssetsTab(); // odśwież tabelę
+        await loadAssetsTab();
     } catch (err) {
         console.error("Błąd usuwania aktywa:", err);
         alert("Nie udało się usunąć aktywa");
     }
 }
 
-export function initAssetButtons() {
-    // Dodaj aktywo
+function initAssetButtons() {
     const addBtn = document.getElementById('addAssetBtn');
     if (addBtn && !addBtn.dataset.listenerAdded) {
         addBtn.dataset.listenerAdded = 'true';
         addBtn.addEventListener('click', handleAddAsset);
     }
-
-    // Usuń aktywo — jeden przycisk
     const removeBtn = document.getElementById('removeAssetBtn');
     if (removeBtn && !removeBtn.dataset.listenerAdded) {
         removeBtn.dataset.listenerAdded = 'true';

@@ -4,7 +4,7 @@ export async function drawPortfolioPieChart(data) {
 
     const width = 800;
     const height = 900; 
-    const radius = Math.min(width, height - 100) / 2 - 40; // zostaw miejsce na legendę
+    const radius = Math.min(width, height - 100) / 2 ;
 
     container
         .style("display", "flex")
@@ -38,7 +38,6 @@ export async function drawPortfolioPieChart(data) {
         .append("g")
         .attr("class", "arc");
 
-    // --- łuki ---
     arcs.append("path")
         .attr("d", arc)
         .attr("fill", d => color(d.data.class))
@@ -46,11 +45,10 @@ export async function drawPortfolioPieChart(data) {
         .attr("stroke-width", 2)
         .style("filter", "drop-shadow(4px 4px 6px rgba(0,0,0,0.3))");
 
-    // --- procenty w środku łuków, ale bliżej krawędzi (70% promienia) ---
     arcs.append("text")
         .attr("transform", d => {
             const [x, y] = arc.centroid(d);
-            const factor = 1.4; // 1 -> środek, >1 przesunięcie w kierunku krawędzi
+            const factor = 1.4; // 1 - środek, >1 przesunięcie w kierunku krawędzi
             return `translate(${x * factor}, ${y * factor})`;
         })
         .attr("text-anchor", "middle")
@@ -59,7 +57,6 @@ export async function drawPortfolioPieChart(data) {
         .attr("font-weight", "bold")
         .text(d => `${d.data.percent.toFixed(1)}%`);
 
-    // --- legenda pod wykresem ---
     const legend = container.append("div")
         .style("display", "flex")
         .style("flex-wrap", "wrap")

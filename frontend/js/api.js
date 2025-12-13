@@ -1,7 +1,3 @@
-// =============================
-// API — pełna obsługa backendu
-// =============================
-
 const BASE = "http://localhost:8000";
 
 // Status backendu / Neo4j
@@ -53,10 +49,6 @@ export async function fetchRemoveAsset(asset_id) {
     }).then(r => r.json());
 }
 
-// =============================
-// PORTFOLIO OPERATIONS
-// =============================
-
 // Dodaj lub zaktualizuj aktywo
 export async function fetchAddAsset(asset) {
     return await fetch(`${BASE}/assets`, {
@@ -91,11 +83,9 @@ export async function fetchPortfolioRemove(asset_id) {
     }).then(r => r.json());
 }
 
-// =============================
-// Pobranie procentowej wartości klas aktywów w portfelu
-// =============================
+// Pobierz procentową wartość klas aktywów w portfelu
 export async function fetchPortfolioClassDistribution() {
     const res = await fetch(`${BASE}/portfolio/class-distribution`);
     if (!res.ok) throw new Error("Błąd pobierania danych o klasach aktywów");
-    return await res.json(); // zwróci tablicę obiektów {class, value, percent}
+    return await res.json();
 }

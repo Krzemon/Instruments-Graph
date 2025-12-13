@@ -31,17 +31,8 @@ export async function drawPortfolioGraph(data) {
     const centerX = width / 2;
     const centerY = height / 2;
     const baseRadius = 400; // bazowy promień okręgu
-    const minRadius = 200;
 
-    const circle = gCircle.append("circle")
-        .attr("cx", centerX)
-        .attr("cy", centerY)
-        .attr("r", baseRadius)
-        .attr("stroke", "#999")
-        .attr("stroke-dasharray", "6,4")
-        .attr("fill", "none");
-
-    // --- ustawienie węzłów na okręgu ---
+    // ustawienie węzłów na okręgu
     const n = nodes.length;
     nodes.forEach((d, i) => {
         const angle = (i / n) * 2 * Math.PI;
@@ -84,7 +75,6 @@ export async function drawPortfolioGraph(data) {
         .alphaDecay(0.02)
         .velocityDecay(0.2);
 
-    // --- krawędzie ---
     const link = gLinks.selectAll("line")
         .data(links)
         .enter()
@@ -118,7 +108,6 @@ export async function drawPortfolioGraph(data) {
         .text(d => d.value.toFixed(2))
         .style("pointer-events", "none");
 
-    // --- węzły ---
     const node = gNodes.selectAll("circle")
         .data(nodes)
         .enter()
@@ -142,7 +131,6 @@ export async function drawPortfolioGraph(data) {
         .text(d => d.id)
         .style("pointer-events", "none");
 
-    // --- tick ---
     simulation.on("tick", () => {
         link.attr("x1", d => d.source.x)
             .attr("y1", d => d.source.y)
@@ -158,7 +146,7 @@ export async function drawPortfolioGraph(data) {
         nodeLabel.attr("x", d => d.x)
             .attr("y", d => d.y);
 
-        // --- płynny powrót węzłów na obwód ---
+        // płynny powrót węzłów na obwód
         nodes.forEach(d => {
             if(d.onCircle && !d.dragging){
                 const dx = d.x - centerX;
@@ -171,7 +159,7 @@ export async function drawPortfolioGraph(data) {
             }
         });
 
-        // --- kolizja węzłów na obwodzie ---
+        // kolizja węzłów na obwodzie
         for (let i = 0; i < nodes.length; i++) {
             for (let j = i+1; j < nodes.length; j++) {
                 const a = nodes[i], b = nodes[j];
@@ -192,7 +180,6 @@ export async function drawPortfolioGraph(data) {
         }
     });
 
-    // --- drag ---
     function dragstarted(event, d) { 
         d.dragging = true;
         if (!event.active) simulation.alphaTarget(0.3).restart(); 
@@ -207,48 +194,46 @@ export async function drawPortfolioGraph(data) {
         if (!event.active) simulation.alphaTarget(0); 
     }
 
-    // --- zoom + pan ---
-let currentTransform = d3.zoomIdentity;
+    let currentTransform = d3.zoomIdentity;
 
-const zoom = d3.zoom()
-    .scaleExtent([0.5, 3])
-    .on("zoom", (event) => {
-        currentTransform = event.transform;
-        gMain.attr("transform", currentTransform);
-    })
-    .on("end", () => {
-        const r = baseRadius;
-        const marginFactor = 1.2;
+    const zoom = d3.zoom()
+        .scaleExtent([0.5, 3])
+        .on("zoom", (event) => {
+            currentTransform = event.transform;
+            gMain.attr("transform", currentTransform);
+        })
+        .on("end", () => {
+            const r = baseRadius;
+            const marginFactor = 1.2;
 
-        // przekształcenie punktu środka widoku do układu grafu
-        const viewCenterGraphX = (width/2 - currentTransform.x) / currentTransform.k;
-        const viewCenterGraphY = (height/2 - currentTransform.y) / currentTransform.k;
+            // przekształcenie punktu środka widoku do układu grafu
+            const viewCenterGraphX = (width/2 - currentTransform.x) / currentTransform.k;
+            const viewCenterGraphY = (height/2 - currentTransform.y) / currentTransform.k;
 
-        // odległość środka widoku od środka okręgu
-        const dx = viewCenterGraphX - centerX;
-        const dy = viewCenterGraphY - centerY;
-        const distance = Math.sqrt(dx*dx + dy*dy);
+            // odległość środka widoku od środka okręgu
+            const dx = viewCenterGraphX - centerX;
+            const dy = viewCenterGraphY - centerY;
+            const distance = Math.sqrt(dx*dx + dy*dy);
 
-        // jeśli odległość większa niż 1.2 * promień → powrót
-        if(distance > r * marginFactor){
-            const targetX = width/2 - centerX * currentTransform.k;
-            const targetY = height/2 - centerY * currentTransform.k;
+            // jeśli odległość większa niż 1.2 * promień → powrót
+            if(distance > r * marginFactor){
+                const targetX = width/2 - centerX * currentTransform.k;
+                const targetY = height/2 - centerY * currentTransform.k;
 
-            d3.transition().duration(500).tween("pan", () => {
-                const ix = d3.interpolate(currentTransform.x, targetX);
-                const iy = d3.interpolate(currentTransform.y, targetY);
-                return t => {
-                    currentTransform.x = ix(t);
-                    currentTransform.y = iy(t);
-                    gMain.attr("transform", currentTransform);
-                };
-            });
-        }
-    });
+                d3.transition().duration(500).tween("pan", () => {
+                    const ix = d3.interpolate(currentTransform.x, targetX);
+                    const iy = d3.interpolate(currentTransform.y, targetY);
+                    return t => {
+                        currentTransform.x = ix(t);
+                        currentTransform.y = iy(t);
+                        gMain.attr("transform", currentTransform);
+                    };
+                });
+            }
+        });
 
-svg.call(zoom);
+    svg.call(zoom);
 
-    // --- klik w tło resetuje podświetlenie ---
     svg.on("click", () => {
         link.attr("stroke", l => l.value > 0 ? "#e74c3c" : "#27ae60")
             .attr("stroke-width", l => Math.max(1, Math.abs(l.value) * 4));
