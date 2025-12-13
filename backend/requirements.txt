@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-neo4j
-pydantic
-python-dotenv
-yfinance
-apscheduler
-pandas
-numpy
