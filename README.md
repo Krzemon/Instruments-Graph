@@ -71,3 +71,25 @@ Frontend to aplikacja SPA napisana w **HTML**, **CSS** i **JavaScript**, z wykor
 ```bash
 cd frontend
 python -m http.server 8080
+```
+### Backend
+
+```bash
+cd backend
+uvicorn main:app --reload
+```
+
+
+### requirements.txt
+
+```bash
+fastapi
+uvicorn
+neo4j
+pydantic
+python-dotenv
+yfinance
+apscheduler
+pandas
+numpy
+```
