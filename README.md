@@ -14,12 +14,12 @@ Pierwszą widoczną zakładką jest **Dashboard**, która zawiera informację o 
 
 ## Aktywa
 
-Zakładka **Aktywa** renderuje tabelę, która zawiera przechowywane w bazie aktywa oraz przyciski umożliwiające:
+Zakładka **Aktywa** renderuje tabelę, która zawiera przechowywane aktywa oraz przyciski umożliwiające:
 
 - Obliczenie ryzyka na podstawie ostatnich 60 dni,  
 - Obliczenie korelacji par aktywów na podstawie danych z ostatniego roku,  
-- Dodanie nowego lub modyfikację istniejącego aktywa do bazy danych,  
-- Usunięcie aktywa z bazy danych.  
+- Dodanie nowego lub modyfikację istniejącego aktywa,  
+- Usunięcie aktywa.  
 
 Baza danych jest aktualizowana o te wartości.
 
