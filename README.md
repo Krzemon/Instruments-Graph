@@ -39,7 +39,7 @@ Wszystkie tabele można sortować według każdej z kolumn.
 
 ## Baza Danych
 
-Podstawowym założeniem projektu jest wykorzystanie grafowej bazy danych **Neo4J** [Neo4J](https://neo4j.com/), która jest zoptymalizowana pod kątem przechowywania i analizy powiązań między elementami. W tym celu wykorzystano usługę DBaaS dostępną w serwisie [Neo4J AuraDB](https://neo4j.com/cloud/aura/).
+Podstawowym założeniem projektu jest wykorzystanie grafowej bazy danych [Neo4J](https://neo4j.com/), która jest zoptymalizowana pod kątem przechowywania i analizy powiązań między elementami. W tym celu wykorzystano usługę DBaaS dostępną w serwisie [Neo4J AuraDB](https://neo4j.com/cloud/aura/).
 
 ---
 
@@ -56,7 +56,7 @@ Funkcjonalności backendu:
 
 ## Frontend
 
-Frontend to aplikacja SPA napisana w **HTML**, **CSS** i **JavaScript**, z wykorzystaniem biblioteki **D3.js** do generowania interaktywnych wizualizacji grafu.  
+Frontend to aplikacja SPA napisana w **HTML**, **CSS** i **JavaScript**, z wykorzystaniem biblioteki **D3.js** do generowania interaktywnej wizualizacji grafu.  
 
 - Cała logika działa po stronie klienta,  
 - Komunikacja z backendem odbywa się przez plik `api.js`,  
